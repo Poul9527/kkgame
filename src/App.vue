@@ -15,13 +15,25 @@
 
     <!-- 浮动成就达成通知 -->
     <AchievementToast />
+
+    <!-- 全局登录 / 注册弹窗 -->
+    <AuthModal />
   </div>
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import ParticleCanvas from '@/components/common/ParticleCanvas.vue'
 import Navbar from '@/components/common/Navbar.vue'
 import AchievementToast from '@/components/common/AchievementToast.vue'
+import AuthModal from '@/components/auth/AuthModal.vue'
+import { useAuthStore } from '@/stores/authStore'
+
+const authStore = useAuthStore()
+
+onMounted(() => {
+  authStore.checkAuth()
+})
 </script>
 
 <style>

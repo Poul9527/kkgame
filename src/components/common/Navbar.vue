@@ -73,10 +73,23 @@
           <Minimize2 v-else class="w-5 h-5" />
         </button>
 
-        <!-- 头像跳转 -->
-        <router-link to="/profile" class="avatar-box" title="个人档案">
-          <span>{{ userStore.avatar }}</span>
-        </router-link>
+        <!-- 登录 / 注册 / 用户态 -->
+        <div v-if="!authStore.isLoggedIn" class="auth-buttons">
+          <button class="btn-arcade btn-primary nav-auth-btn" @click="authStore.openAuthModal('login')">
+            <LogIn class="w-4 h-4" />
+            <span>登录</span>
+          </button>
+        </div>
+
+        <div v-else class="user-profile-group">
+          <!-- 头像跳转 -->
+          <router-link to="/profile" class="avatar-box" :title="`玩家: ${authStore.currentUser?.nickname} (点击进入个人档案)`">
+            <span>{{ authStore.currentUser?.avatar || userStore.avatar }}</span>
+          </router-link>
+          <button class="icon-btn logout-btn" @click="authStore.logout" title="退出登录">
+            <LogOut class="w-4 h-4 text-slate-400 hover:text-rose-400" />
+          </button>
+        </div>
       </div>
     </div>
   </header>
@@ -86,13 +99,15 @@
 import { ref } from 'vue'
 import { 
   Gamepad2, LayoutGrid, Trophy, ShoppingBag, User, Coins, 
-  Volume2, VolumeX, Music, Maximize2, Minimize2 
+  Volume2, VolumeX, Music, Maximize2, Minimize2, LogIn, LogOut 
 } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
+import { useAuthStore } from '@/stores/authStore'
 import { sound } from '@/utils/soundEngine'
 import confetti from 'canvas-confetti'
 
 const userStore = useUserStore()
+const authStore = useAuthStore()
 const isFullscreen = ref(false)
 
 const handleCoinBonus = (e: MouseEvent) => {
@@ -324,6 +339,23 @@ const toggleFullscreen = () => {
 
 .avatar-box:hover {
   transform: scale(1.08);
+}
+
+.user-profile-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-auth-btn {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  gap: 4px;
+}
+
+.logout-btn:hover {
+  border-color: #f43f5e;
 }
 
 @media (max-width: 900px) {
