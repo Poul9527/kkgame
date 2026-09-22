@@ -1,4 +1,4 @@
-import { db, initDatabase } from '../../server/db/client'
+import { getDb, initDatabase } from '../../server/db/client'
 import { hashPassword, signToken } from '../../server/utils/auth'
 import { parseJsonBody, jsonResponse } from '../../server/utils/http'
 import crypto from 'crypto'
@@ -12,7 +12,15 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    await initDatabase()
+    const db = getDb()
+    if (!db) {
+      return jsonResponse(res, 503, {
+        ok: false,
+        error: '未连接云端 Turso 数据库。请在 Vercel 环境变量中配置 TURSO_DATABASE_URL 和 TURSO_AUTH_TOKEN。'
+      })
+    }
+
+    await initDatabase(db)
     const body = await parseJsonBody(req)
     const { username, password, nickname, avatar } = body
 
@@ -74,6 +82,6 @@ export default async function handler(req: any, res: any) {
     })
   } catch (err: any) {
     console.error('Register error:', err)
-    return jsonResponse(res, 500, { error: err.message || '服务器内部错误' })
+    return jsonResponse(res, 500, { ok: false, error: err.message || '注册服务处理异常' })
   }
 }

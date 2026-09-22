@@ -1,30 +1,28 @@
-import { createClient, type Client } from '@libsql/client'
+import { createClient, type Client } from '@libsql/client/web'
 
-import path from 'path'
-import os from 'os'
-
-// 环境变量优先使用 Turso 远端 URL，未配置时自动回退为 /tmp 可写临时数据库文件
-const getDbConfig = () => {
-  if (process.env.TURSO_DATABASE_URL) {
-    return {
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN || undefined
-    }
-  }
-  const tmpPath = path.join(os.tmpdir(), 'kkgame_local.db').replace(/\\/g, '/')
-  return {
-    url: `file:${tmpPath}`
-  }
-}
-
-export const db: Client = createClient(getDbConfig())
-
+let dbInstance: Client | null = null
 let isInitialized = false
+
+/**
+ * 获取纯 Web / fetch 版本的 Turso 客户端
+ * 零 native 依赖，100% 免疫 Vercel Serverless / AWS Lambda 运行时的环境崩溃
+ */
+export function getDb(): Client | null {
+  const url = process.env.TURSO_DATABASE_URL
+  const authToken = process.env.TURSO_AUTH_TOKEN
+  if (!url) {
+    return null
+  }
+  if (!dbInstance) {
+    dbInstance = createClient({ url, authToken })
+  }
+  return dbInstance
+}
 
 /**
  * 自动初始化表结构（幂等创建）
  */
-export async function initDatabase(): Promise<void> {
+export async function initDatabase(db: Client): Promise<void> {
   if (isInitialized) return
 
   await db.executeMultiple(`

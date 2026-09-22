@@ -1,4 +1,4 @@
-import { db, initDatabase } from '../../server/db/client'
+import { getDb, initDatabase } from '../../server/db/client'
 import { verifyToken } from '../../server/utils/auth'
 import { jsonResponse } from '../../server/utils/http'
 
@@ -20,7 +20,15 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    await initDatabase()
+    const db = getDb()
+    if (!db) {
+      return jsonResponse(res, 503, {
+        ok: false,
+        error: '未连接云端 Turso 数据库。请在 Vercel 环境变量中配置 TURSO_DATABASE_URL 和 TURSO_AUTH_TOKEN。'
+      })
+    }
+
+    await initDatabase(db)
     const result = await db.execute({
       sql: `
         SELECT u.id, u.username, u.nickname, u.avatar, w.coins
@@ -48,6 +56,6 @@ export default async function handler(req: any, res: any) {
       }
     })
   } catch (err: any) {
-    return jsonResponse(res, 500, { error: err.message || '获取个人资料失败' })
+    return jsonResponse(res, 500, { ok: false, error: err.message || '获取个人资料失败' })
   }
 }
