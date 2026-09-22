@@ -97,9 +97,6 @@ class TexasRoom {
           case 'chat':
             this.handleChat(ws, msg)
             break
-          case 'add_bot':
-            this.addTestBot()
-            break
         }
       } catch (err: any) {
         ws.send(JSON.stringify({ type: 'error', message: err.message }))
@@ -188,39 +185,11 @@ class TexasRoom {
     this.addLog(msg.text, sender)
   }
 
-  public addTestBot() {
-    const emptyIdx = this.seats.findIndex(s => s === null)
-    if (emptyIdx === -1) return
-    const botNames = ['赛博赌圣', '阿尔法狗', '深海大白鲨', '保本岩石怪', '德州老猫']
-    const avatars = ['🤖', '🦈', '🪨', '🐱', '🕶️']
-    const pick = Math.floor(Math.random() * botNames.length)
-
-    this.seats[emptyIdx] = {
-      userId: `bot_${Date.now()}_${emptyIdx}`,
-      nickname: botNames[pick],
-      avatar: avatars[pick],
-      chips: this.bigBlind * 50,
-      seatIndex: emptyIdx,
-      cards: [],
-      currentRoundBet: 0,
-      totalHandBet: 0,
-      isFolded: false,
-      isAllIn: false,
-      hasActedThisRound: false,
-      isBot: true
-    }
-
-    this.addLog(`🤖 陪练AI [${botNames[pick]}] 入座了 ${emptyIdx + 1} 号位`)
-    this.broadcastSnapshot()
-    if (this.stage === 'idle' || this.stage === 'ended') {
-      setTimeout(() => this.tryStartNewHand(), 1200)
-    }
-  }
-
   public tryStartNewHand() {
     const activePlayers = this.seats.filter(s => s && s.chips > this.bigBlind)
     if (activePlayers.length < 2) {
       this.stage = 'idle'
+      this.addLog('⏳ 牌桌等待更多真实牌手入座 (满2人自动发牌)...')
       this.broadcastSnapshot()
       return
     }
@@ -471,20 +440,11 @@ class TexasRoom {
     const cur = this.seats[this.activeSeatIndex]
     if (!cur) return
 
-    if (cur.isBot) {
-      // 机器人思考 1~2.5 秒后自动出牌
-      const thinkTime = 1000 + Math.random() * 1500
-      this.turnTimeoutTimer = setTimeout(() => {
-        this.makeBotDecision(cur)
-      }, thinkTime)
-      return
-    }
-
     // 真人玩家 15 秒倒计时
     this.turnTimeoutTimer = setTimeout(() => {
       const p = this.seats[this.activeSeatIndex]
       if (p && !p.isFolded && !p.isAllIn) {
-        this.addLog(`⏰ [${p.nickname}] 思考超时，系统自动看牌/弃牌`)
+        this.addLog(`⏰ [${p.nickname}] 思考超时，系统自动处理`)
         if (p.currentRoundBet >= this.currentHighestBet) {
           this.executePlayerAction(p, 'check')
         } else {
@@ -492,25 +452,6 @@ class TexasRoom {
         }
       }
     }, this.TURN_TIME_LIMIT * 1000)
-  }
-
-  private makeBotDecision(bot: PlayerSeat) {
-    const toCall = this.currentHighestBet - bot.currentRoundBet
-    if (toCall === 0) {
-      // 能过牌时 85% 看牌，15% 小加注
-      if (Math.random() < 0.85) {
-        this.executePlayerAction(bot, 'check')
-      } else {
-        this.executePlayerAction(bot, 'raise', this.currentHighestBet + this.bigBlind)
-      }
-    } else {
-      // 需要跟注
-      if (toCall <= this.bigBlind * 2 || Math.random() < 0.6) {
-        this.executePlayerAction(bot, 'call')
-      } else {
-        this.executePlayerAction(bot, 'fold')
-      }
-    }
   }
 
   private findNextActiveSeat(fromSeat: number): number {
@@ -603,14 +544,9 @@ class TexasRoom {
 
 // 房间管理器
 const rooms = new Map<string, TexasRoom>()
-rooms.set('room_beginner', new TexasRoom('room_beginner', '新手欢聚桌 🟢', 10, 20))
-rooms.set('room_pro', new TexasRoom('room_pro', '高手进阶桌 🟡', 50, 100))
-rooms.set('room_master', new TexasRoom('room_master', '巅峰赌神桌 🔴', 200, 400))
-
-// 自动保底：给新手桌预置两个可爱的练习机器人，保证任何时候真人进桌都能立即体验！
-const beginner = rooms.get('room_beginner')!
-beginner.addTestBot()
-beginner.addTestBot()
+rooms.set('room_beginner', new TexasRoom('room_beginner', '澳门微额欢乐桌 🟢', 10, 20))
+rooms.set('room_pro', new TexasRoom('room_pro', '拉斯维加斯经典桌 🟡', 50, 100))
+rooms.set('room_master', new TexasRoom('room_master', '蒙特卡洛巅峰豪客桌 🔴', 200, 400))
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')

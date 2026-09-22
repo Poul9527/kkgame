@@ -35,7 +35,7 @@ export type TexasStage =
   | 'showdown'  // 摊牌结算
   | 'ended'     // 本局结束
 
-export type PlayerPosition = 'btn' | 'sb' | 'bb' | 'utg'
+export type PlayerPosition = 'btn' | 'sb' | 'bb' | 'utg' | 'mp' | 'co'
 
 export interface TexasPlayer {
   id: string
@@ -52,5 +52,5 @@ export interface TexasPlayer {
   isHuman: boolean
   position: PlayerPosition
   statusText?: string
-  personality?: 'shark' | 'rock' | 'station'
+  personality?: 'shark' | 'rock' | 'station' | 'master'
 }

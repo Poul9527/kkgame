@@ -165,11 +165,6 @@ export function useTexasMultiplayer() {
     }))
   }
 
-  function addBot() {
-    if (!ws.value) return
-    ws.value.send(JSON.stringify({ type: 'add_bot' }))
-  }
-
   function disconnect() {
     if (ws.value) {
       ws.value.close()
@@ -186,7 +181,6 @@ export function useTexasMultiplayer() {
     stand,
     action,
     chat,
-    addBot,
     isConnected,
     isConnecting,
     connectionError,

@@ -149,6 +149,45 @@
       </div>
     </section>
 
+    <!-- 经典街机与热门游艺专区 (为其他小游戏提供精美入口) -->
+    <section class="arcade-section">
+      <div class="section-header">
+        <div class="title-group">
+          <Gamepad2 class="w-5 h-5 text-cyan-400" />
+          <h3 class="section-title">经典街机与益智专区 (ARCADE & BOARD GAMES)</h3>
+        </div>
+        <span class="online-counter font-arcade">休闲即开 · 零延迟畅玩</span>
+      </div>
+
+      <div class="arcade-grid">
+        <div 
+          v-for="game in arcadeGames" 
+          :key="game.id" 
+          class="arcade-card glass-panel"
+          @click="router.push(`/game/${game.id}`)"
+        >
+          <div class="arcade-card-top">
+            <span class="arcade-icon">{{ game.icon }}</span>
+            <div class="arcade-play-count font-arcade">🔥 {{ game.playCount }} 游玩</div>
+          </div>
+          <div class="arcade-card-mid">
+            <h4 class="arcade-title">{{ game.title }}</h4>
+            <span class="arcade-sub font-arcade">{{ game.subtitle }}</span>
+            <p class="arcade-desc">{{ game.description }}</p>
+          </div>
+          <div class="arcade-card-btm">
+            <div class="arcade-tags">
+              <span v-for="tag in game.tags.slice(0, 2)" :key="tag" class="arcade-tag">#{{ tag }}</span>
+            </div>
+            <button class="btn-play-mini font-arcade">
+              <span>立即开局</span>
+              <ChevronRight class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 名人堂 & 战绩排行榜 -->
     <section class="bottom-features-grid">
       <!-- 德扑富豪榜 -->
@@ -271,13 +310,15 @@ import Modal from '@/components/common/Modal.vue'
 import confetti from 'canvas-confetti'
 import { 
   Gift, Zap, Plus, BookOpen, Sparkles, Users, 
-  ChevronRight, Trophy, ShieldCheck, Lock, Database, Activity 
+  ChevronRight, Trophy, ShieldCheck, Lock, Database, Activity, Gamepad2 
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const userStore = useUserStore()
 const gameStore = useGameStore()
+
+const arcadeGames = computed(() => gameStore.games.filter(g => g.id !== 'texas'))
 
 const showRulesModal = ref(false)
 const showCreateModal = ref(false)
@@ -1008,6 +1049,117 @@ onMounted(() => {
   padding: 10px 14px;
   color: #fff;
   font-size: 14px;
+}
+
+/* 街机小游戏专区样式 */
+.arcade-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.arcade-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.arcade-card {
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.arcade-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 10px 25px rgba(6, 182, 212, 0.15);
+}
+
+.arcade-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.arcade-icon {
+  font-size: 28px;
+}
+
+.arcade-play-count {
+  font-size: 11px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.arcade-card-mid {
+  margin: 12px 0;
+}
+
+.arcade-title {
+  font-size: 16px;
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.arcade-sub {
+  font-size: 10px;
+  color: #06b6d4;
+  letter-spacing: 0.5px;
+}
+
+.arcade-desc {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 6px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.arcade-card-btm {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 10px;
+}
+
+.arcade-tags {
+  display: flex;
+  gap: 4px;
+}
+
+.arcade-tag {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.btn-play-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #38bdf8;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.arcade-card:hover .btn-play-mini {
+  color: #06b6d4;
+  transform: translateX(2px);
 }
 
 @media (max-width: 900px) {
