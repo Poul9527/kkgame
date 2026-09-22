@@ -1,6 +1,6 @@
-import { getDb, initDatabase } from '../../server/db/client'
-import { verifyToken } from '../../server/utils/auth'
-import { jsonResponse } from '../../server/utils/http'
+import { getDb, initDatabase } from '../../server/db/client.js'
+import { verifyToken } from '../../server/utils/auth.js'
+import { jsonResponse } from '../../server/utils/http.js'
 import crypto from 'crypto'
 
 export default async function handler(req: any, res: any) {

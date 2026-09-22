@@ -1,6 +1,6 @@
-import { getDb, initDatabase } from '../../server/db/client'
-import { comparePassword, signToken } from '../../server/utils/auth'
-import { parseJsonBody, jsonResponse } from '../../server/utils/http'
+import { getDb, initDatabase } from '../../server/db/client.js'
+import { comparePassword, signToken } from '../../server/utils/auth.js'
+import { parseJsonBody, jsonResponse } from '../../server/utils/http.js'
 
 export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
