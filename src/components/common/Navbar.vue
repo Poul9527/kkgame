@@ -4,11 +4,11 @@
       <!-- 品牌标识 -->
       <router-link to="/" class="brand" @click="sound.click()">
         <div class="logo-box">
-          <Gamepad2 class="w-6 h-6 text-cyan-400" />
+          <span class="text-xl">♠</span>
         </div>
         <div class="brand-text">
-          <span class="brand-title font-arcade">KK ARCADE</span>
-          <span class="brand-tag">极客游戏大厅</span>
+          <span class="brand-title font-arcade">KK POKER</span>
+          <span class="brand-tag">德州竞技俱乐部</span>
         </div>
       </router-link>
 
@@ -16,15 +16,15 @@
       <nav class="nav-links">
         <router-link to="/" class="nav-item" active-class="active" @click="sound.click()">
           <LayoutGrid class="icon" />
-          <span>游戏大厅</span>
+          <span>德扑大厅</span>
+        </router-link>
+        <router-link to="/game/texas" class="nav-item" active-class="active" @click="sound.click()">
+          <Trophy class="icon text-amber-400" />
+          <span>进入牌桌</span>
         </router-link>
         <router-link to="/leaderboard" class="nav-item" active-class="active" @click="sound.click()">
           <Trophy class="icon" />
           <span>名人堂</span>
-        </router-link>
-        <router-link to="/shop" class="nav-item" active-class="active" @click="sound.click()">
-          <ShoppingBag class="icon" />
-          <span>主题商城</span>
         </router-link>
         <router-link to="/profile" class="nav-item" active-class="active" @click="sound.click()">
           <User class="icon" />

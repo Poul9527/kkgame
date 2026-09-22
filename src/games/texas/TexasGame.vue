@@ -24,7 +24,7 @@
     </div>
 
     <!-- 多人在线模式 -->
-    <MultiplayerTexas v-if="playMode === 'multiplayer'" />
+    <MultiplayerTexas v-if="playMode === 'multiplayer'" :initial-room-id="routeRoomId" />
 
     <!-- 单机人机练习模式 -->
     <div v-else class="single-player-view">
@@ -489,10 +489,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { Play, Coins, ShieldAlert, Flame, Loader2, Trophy, AlertCircle, Eye, Crown, Users, Bot } from 'lucide-vue-next'
 import MultiplayerTexas from './MultiplayerTexas.vue'
 
-const playMode = ref<'multiplayer' | 'single'>('multiplayer')
+const route = useRoute()
+const playMode = ref<'multiplayer' | 'single'>(route.query.mode === 'single' ? 'single' : 'multiplayer')
+const routeRoomId = computed(() => (route.query.room as string) || 'room_beginner')
 import type { Card, TexasPlayer, TexasStage, EvaluatedTexasHand } from './types'
 import { 
   createDeck, shuffleDeck, evaluateBest5OfCards, compareTexasHands, 

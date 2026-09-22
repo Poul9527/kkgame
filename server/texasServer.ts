@@ -630,7 +630,11 @@ wss.on('connection', (ws: WebSocket, req) => {
   const roomId = url.searchParams.get('roomId') || 'room_beginner'
   let room = rooms.get(roomId)
   if (!room) {
-    room = rooms.get('room_beginner')!
+    const sb = Number(url.searchParams.get('sb') || 10)
+    const bb = Number(url.searchParams.get('bb') || 20)
+    const name = url.searchParams.get('name') ? decodeURIComponent(url.searchParams.get('name')!) : `私人包厢 #${roomId.slice(-4)}`
+    room = new TexasRoom(roomId, name, sb, bb)
+    rooms.set(roomId, room)
   }
   room.handleConnection(ws, url.searchParams)
 })

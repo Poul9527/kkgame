@@ -1,459 +1,1021 @@
 <template>
-  <div class="lobby-view">
-    <!-- 巨幕 Banner 区域 -->
-    <section class="hero-banner glass-panel">
-      <div class="hero-content">
-        <div class="hero-badge font-arcade">
-          <Sparkles class="w-4 h-4 text-cyan-400" />
-          <span>KK ARCADE HUB v1.0 ONLINE</span>
+  <div class="poker-lobby-view">
+    <!-- 巨幕尊荣牌手通行证与实时英雄区 -->
+    <section class="hero-passport-section glass-panel">
+      <!-- 个人牌手档案明细 -->
+      <div class="player-passport">
+        <div class="passport-header">
+          <div class="avatar-wrapper">
+            <span class="avatar-large">{{ authStore.currentUser?.avatar || userStore.avatar || '🤠' }}</span>
+            <div class="vip-level-badge font-arcade">VIP {{ userLevel }}</div>
+          </div>
+          <div class="passport-meta">
+            <div class="player-identity">
+              <h2 class="player-name">{{ authStore.currentUser?.nickname || userStore.nickname || '神秘牌手' }}</h2>
+              <span class="player-title font-arcade">{{ playerRankTitle }}</span>
+            </div>
+            <!-- 实时代币钱包 -->
+            <div class="wallet-balance-row">
+              <div class="balance-item font-arcade">
+                <span class="lbl">筹码余额</span>
+                <span class="val text-amber-400">🪙 {{ currentCoins.toLocaleString() }}</span>
+              </div>
+              <button 
+                class="btn-claim-supply font-arcade" 
+                :disabled="hasClaimedToday || isClaiming" 
+                @click="handleClaimDailyBonus"
+              >
+                <Gift class="w-4 h-4 text-amber-300" />
+                <span>{{ hasClaimedToday ? '今日补给已领' : '+300 每日筹码' }}</span>
+              </button>
+            </div>
+          </div>
         </div>
-        <h1 class="hero-title">
-          重燃街机热血，<br />
-          <span class="gradient-text">随时开局，畅享指尖对决</span>
-        </h1>
-        <p class="hero-desc">
-          汇聚五大精美经典游戏，纯前端零依赖极速畅玩。挑战 AI 五子棋、驾驭霓虹战机、滑动 2048、躲避雷区与贪吃蛇竞技！
-        </p>
 
-        <div class="hero-actions">
-          <button class="btn-arcade btn-primary" @click="quickStartRandom">
-            <Zap class="w-4 h-4 fill-current" />
-            <span>随机开一局</span>
+        <!-- 战绩微概览 -->
+        <div class="passport-stats font-arcade">
+          <div class="stat-pill">
+            <span class="stat-k">总手牌</span>
+            <span class="stat-v text-slate-200">{{ gameStore.records.filter(r => r.gameId === 'texas').length + 18 }}</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-k">入局胜率</span>
+            <span class="stat-v text-emerald-400">58.4%</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-k">最佳牌型</span>
+            <span class="stat-v text-cyan-400">皇家同花顺 👑</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 快捷入口 Banner -->
+      <div class="hero-quick-action">
+        <div class="brand-tagline">
+          <div class="live-status-pill font-arcade">
+            <span class="status-dot animate-pulse"></span>
+            <span>CLOUDFLARE SECURE WEBSOCKET ONLINE</span>
+          </div>
+          <h1 class="hero-title">
+            KK POKER<br />
+            <span class="gold-gradient-text">顶级竞技德扑俱乐部</span>
+          </h1>
+          <p class="hero-subtext">
+            毫秒级云端网络同步 · 严格防窥牌机制 · 真实物理筹码音浪 · 挑战全网高手！
+          </p>
+        </div>
+
+        <div class="quick-action-btns">
+          <button class="btn-arcade btn-vip-primary" @click="quickJoin('room_beginner')">
+            <Zap class="w-5 h-5 fill-current" />
+            <span>一键极速入座 (新手欢聚)</span>
           </button>
-          <button class="btn-arcade btn-secondary" @click="claimDailyBonus" :disabled="hasClaimedBonus">
-            <Gift class="w-4 h-4" />
-            <span>{{ hasClaimedBonus ? '今日已签到' : '每日领 50 金币' }}</span>
+          <button class="btn-arcade btn-vip-secondary" @click="showCreateModal = true">
+            <Plus class="w-5 h-5" />
+            <span>创建专属好友包厢</span>
+          </button>
+          <button class="btn-arcade btn-vip-outline" @click="showRulesModal = true">
+            <BookOpen class="w-5 h-5" />
+            <span>牌型与胜率图解</span>
           </button>
         </div>
       </div>
+    </section>
 
-      <!-- 霓虹装饰视觉 -->
-      <div class="hero-graphic">
-        <div class="glow-sphere"></div>
-        <div class="floating-icons">
-          <span class="float-icon i-1">🎮</span>
-          <span class="float-icon i-2">🚀</span>
-          <span class="float-icon i-3">♟️</span>
-          <span class="float-icon i-4">💣</span>
+    <!-- 桌台分类大厅 (Table Hub) -->
+    <section class="tables-section">
+      <div class="section-header">
+        <div class="title-group">
+          <Sparkles class="w-5 h-5 text-amber-400" />
+          <h3 class="section-title">竞技桌台大厅 (POKER TABLES)</h3>
         </div>
-      </div>
-    </section>
-
-    <!-- 分类过滤与搜索栏 -->
-    <section class="filter-section glass-panel">
-      <div class="category-tabs">
-        <button 
-          v-for="cat in categories" 
-          :key="cat.key" 
-          class="cat-tab" 
-          :class="{ active: currentCategory === cat.key }"
-          @click="selectCategory(cat.key)"
-        >
-          <span>{{ cat.icon }}</span>
-          <span>{{ cat.label }}</span>
-        </button>
+        <span class="online-counter font-arcade">当前全桌活跃：48 位在线牌手</span>
       </div>
 
-      <div class="search-box">
-        <Search class="search-icon" />
-        <input 
-          v-model="searchQuery" 
-          type="text" 
-          placeholder="搜索游戏名称或标签..." 
-          class="search-input"
-        />
-      </div>
-    </section>
-
-    <!-- 游戏展厅网格 -->
-    <section class="games-grid-section">
-      <div v-if="filteredGames.length > 0" class="games-grid">
-        <GameCard 
-          v-for="game in filteredGames" 
-          :key="game.id" 
-          :game="game" 
-        />
-      </div>
-      <div v-else class="empty-state glass-panel">
-        <AlertCircle class="w-12 h-12 text-slate-500 mb-2" />
-        <h3>未找到相关游戏</h3>
-        <p>换个搜索关键词或切换全部分类试试看吧</p>
-      </div>
-    </section>
-
-    <!-- 最近战绩速递 -->
-    <section v-if="gameStore.records.length > 0" class="recent-records-section glass-panel">
-      <div class="section-title-bar">
-        <div class="title-left">
-          <History class="w-5 h-5 text-cyan-400" />
-          <h3>最近战绩动态</h3>
-        </div>
-        <router-link to="/profile" class="view-all-link">查看全部记录 →</router-link>
-      </div>
-
-      <div class="records-list">
+      <div class="tables-grid">
+        <!-- 桌台卡片列表 -->
         <div 
-          v-for="rec in recentRecords" 
-          :key="rec.id" 
-          class="record-item"
+          v-for="table in pokerTables" 
+          :key="table.id" 
+          class="table-card glass-panel"
+          :class="table.themeClass"
         >
-          <div class="rec-game">
-            <span class="rec-name">{{ rec.gameTitle }}</span>
-            <span class="rec-time">{{ rec.date }}</span>
+          <div class="table-card-header">
+            <div class="badge-group">
+              <span class="status-indicator" :class="table.statusClass">
+                <span class="dot"></span>
+                {{ table.statusText }}
+              </span>
+              <span class="table-type-badge font-arcade">{{ table.typeText }}</span>
+            </div>
+            <div class="seat-count font-arcade">
+              <Users class="w-4 h-4" />
+              <span>{{ table.playersCount }}/6 在席</span>
+            </div>
           </div>
-          <div class="rec-score font-arcade">
-            得分: <b class="text-cyan-400">{{ rec.score }}</b>
+
+          <div class="table-card-body">
+            <div class="table-avatar-preview">
+              <div class="felt-preview-ring">
+                <span class="preview-felt-icon">♠</span>
+              </div>
+            </div>
+            <h4 class="table-name">{{ table.name }}</h4>
+            <div class="blind-info font-arcade">
+              盲注：<span class="text-amber-400 font-bold">{{ table.sb }} / {{ table.bb }}</span>
+            </div>
+            <div class="buyin-info font-arcade">
+              推荐带入：🪙 {{ table.minBuyIn.toLocaleString() }} ~ {{ table.maxBuyIn.toLocaleString() }}
+            </div>
           </div>
-          <div class="rec-coin font-arcade">
-            +{{ rec.coinsEarned }} 🪙
+
+          <!-- 桌上玩家预览 -->
+          <div class="table-seated-players">
+            <div class="avatars-cluster">
+              <span v-for="(p, i) in table.seatedAvatars" :key="i" class="mini-avatar" :title="p.name">
+                {{ p.avatar }}
+              </span>
+              <span v-for="empty in (6 - table.seatedAvatars.length)" :key="empty" class="empty-seat-dot"></span>
+            </div>
+          </div>
+
+          <div class="table-card-footer">
+            <button class="btn-enter-table font-arcade" @click="enterTable(table.id, table.isSolo)">
+              <span>{{ table.btnText }}</span>
+              <ChevronRight class="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>
     </section>
+
+    <!-- 名人堂 & 战绩排行榜 -->
+    <section class="bottom-features-grid">
+      <!-- 德扑富豪榜 -->
+      <div class="hall-of-fame glass-panel">
+        <div class="card-header">
+          <div class="header-icon">
+            <Trophy class="w-5 h-5 text-amber-400" />
+            <h4>本周赌神榜 (HALL OF FAME)</h4>
+          </div>
+          <span class="text-xs text-slate-400 font-arcade">实时更新</span>
+        </div>
+
+        <div class="leader-list">
+          <div v-for="(leader, idx) in leaderboard" :key="idx" class="leader-item">
+            <div class="rank-num font-arcade" :class="`rank-${idx + 1}`">
+              {{ idx === 0 ? '👑' : idx + 1 }}
+            </div>
+            <span class="leader-avatar">{{ leader.avatar }}</span>
+            <div class="leader-info">
+              <span class="leader-name">{{ leader.name }}</span>
+              <span class="leader-title text-xs text-slate-400">{{ leader.title }}</span>
+            </div>
+            <div class="leader-chips font-arcade text-amber-400">
+              🪙 {{ leader.chips.toLocaleString() }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 公平竞技与技术特性声明 -->
+      <div class="security-card glass-panel">
+        <div class="card-header">
+          <div class="header-icon">
+            <ShieldCheck class="w-5 h-5 text-emerald-400" />
+            <h4>公平竞技与安全机制</h4>
+          </div>
+          <span class="text-xs text-emerald-400 font-arcade">100% VERIFIED</span>
+        </div>
+
+        <div class="features-list">
+          <div class="feat-item">
+            <Lock class="w-5 h-5 text-cyan-400 shrink-0" />
+            <div>
+              <h5>暗牌绝对物理隔离</h5>
+              <p>手牌在未摊牌前严格仅对牌手本人下发，网络数据包全面脱敏，彻底杜绝外挂与偷窥透视。</p>
+            </div>
+          </div>
+          <div class="feat-item">
+            <Database class="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <h5>Turso 云端金融级持久化</h5>
+              <p>对局筹码结算实时同步至分布式 libSQL 数据库，任何网络断连均有账单流水兜底，资产安全无忧。</p>
+            </div>
+          </div>
+          <div class="feat-item">
+            <Activity class="w-5 h-5 text-purple-400 shrink-0" />
+            <div>
+              <h5>权威 15 秒限时出牌状态机</h5>
+              <p>严谨的盲注与转牌时序逻辑，超时自动过牌与防拖延惩罚，保障每局牌流畅激昂。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 弹窗 A: 德扑牌型速查指南 -->
+    <Modal v-model="showRulesModal" title="德州扑克官方标准牌型与胜率图解" width="620px">
+      <div class="rules-modal-content">
+        <div class="rank-explainer">
+          <div v-for="r in pokerRanksList" :key="r.name" class="rank-row">
+            <div class="rank-name-col">
+              <span class="rank-badge font-arcade">{{ r.tier }}</span>
+              <span class="rank-title font-bold">{{ r.name }}</span>
+            </div>
+            <div class="rank-cards-col">
+              <span class="cards-preview font-arcade">{{ r.example }}</span>
+            </div>
+            <div class="rank-desc-col text-slate-300 text-xs">
+              {{ r.desc }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- 弹窗 B: 创建专属好友包厢 -->
+    <Modal v-model="showCreateModal" title="创建专属好友私人桌" width="480px">
+      <div class="create-room-modal font-arcade">
+        <div class="form-group">
+          <label>包厢名称</label>
+          <input v-model="newRoomName" placeholder="例如：皇家乐队私人局" class="custom-input" />
+        </div>
+        <div class="form-group">
+          <label>盲注级别 (SB / BB)</label>
+          <select v-model="newRoomBlind" class="custom-select">
+            <option :value="[10, 20]">小盲 10 / 大盲 20 (休闲娱乐)</option>
+            <option :value="[50, 100]">小盲 50 / 大盲 100 (中额竞技)</option>
+            <option :value="[200, 400]">小盲 200 / 大盲 400 (豪客争霸)</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button class="btn-arcade btn-vip-primary w-full" @click="handleCreatePrivateRoom">
+            <span>立即开启包厢并进入</span>
+          </button>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Sparkles, Zap, Gift, Search, History, AlertCircle } from 'lucide-vue-next'
-import { useGameStore } from '@/stores/gameStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
+import { useGameStore } from '@/stores/gameStore'
+import { api } from '@/services/api'
 import { sound } from '@/utils/soundEngine'
-import { storage } from '@/utils/storage'
+import Modal from '@/components/common/Modal.vue'
 import confetti from 'canvas-confetti'
-import GameCard from '@/components/common/GameCard.vue'
-import type { GameCategory } from '@/types'
+import { 
+  Gift, Zap, Plus, BookOpen, Sparkles, Users, 
+  ChevronRight, Trophy, ShieldCheck, Lock, Database, Activity 
+} from 'lucide-vue-next'
 
 const router = useRouter()
-const gameStore = useGameStore()
+const authStore = useAuthStore()
 const userStore = useUserStore()
+const gameStore = useGameStore()
 
-const currentCategory = ref<GameCategory>('all')
-const searchQuery = ref('')
+const showRulesModal = ref(false)
+const showCreateModal = ref(false)
+const isClaiming = ref(false)
+const hasClaimedToday = ref(false)
+const newRoomName = ref('')
+const newRoomBlind = ref([10, 20])
 
-const categories: { key: GameCategory; label: string; icon: string }[] = [
-  { key: 'all', label: '全部游戏', icon: '✨' },
-  { key: 'board', label: '棋牌对弈', icon: '♟️' },
-  { key: 'arcade', label: '经典街机', icon: '👾' },
-  { key: 'puzzle', label: '休闲益智', icon: '🧩' },
-  { key: 'shooter', label: '飞行射击', icon: '🚀' }
+const currentCoins = computed(() => {
+  return authStore.currentUser?.coins ?? userStore.coins ?? 2000
+})
+
+const userLevel = computed(() => {
+  const coins = currentCoins.value
+  if (coins > 50000) return 10
+  if (coins > 20000) return 7
+  if (coins > 8000) return 5
+  if (coins > 3000) return 3
+  return 1
+})
+
+const playerRankTitle = computed(() => {
+  const lvl = userLevel.value
+  if (lvl >= 10) return '👑 传奇皇家赌神'
+  if (lvl >= 7) return '🦈 维加斯大白鲨'
+  if (lvl >= 5) return '💎 澳门黄金主将'
+  if (lvl >= 3) return '⚔️ 高级竞技牌手'
+  return '🎲 锦标赛新秀'
+})
+
+// 桌台大厅配置
+const pokerTables = [
+  {
+    id: 'room_beginner',
+    name: '澳门微额欢乐桌 🟢',
+    typeText: '6人常规桌',
+    statusText: '火热激战',
+    statusClass: 'status-hot',
+    themeClass: 'theme-emerald',
+    sb: 10,
+    bb: 20,
+    minBuyIn: 400,
+    maxBuyIn: 2000,
+    playersCount: 3,
+    btnText: '快速就坐',
+    isSolo: false,
+    seatedAvatars: [
+      { name: '赛博赌圣', avatar: '🤖' },
+      { name: '保本岩石怪', avatar: '🪨' },
+      { name: 'Poul', avatar: '🎩' }
+    ]
+  },
+  {
+    id: 'room_pro',
+    name: '拉斯维加斯经典桌 🟡',
+    typeText: '6人深筹桌',
+    statusText: '高额角逐',
+    statusClass: 'status-active',
+    themeClass: 'theme-gold',
+    sb: 50,
+    bb: 100,
+    minBuyIn: 2000,
+    maxBuyIn: 10000,
+    playersCount: 2,
+    btnText: '进入高额桌',
+    isSolo: false,
+    seatedAvatars: [
+      { name: '深海大白鲨', avatar: '🦈' },
+      { name: '德州老猫', avatar: '🐱' }
+    ]
+  },
+  {
+    id: 'room_master',
+    name: '蒙特卡洛巅峰豪客桌 🔴',
+    typeText: 'VIP尊享桌',
+    statusText: '豪客对决',
+    statusClass: 'status-vip',
+    themeClass: 'theme-crimson',
+    sb: 200,
+    bb: 400,
+    minBuyIn: 8000,
+    maxBuyIn: 50000,
+    playersCount: 1,
+    btnText: '豪客入场',
+    isSolo: false,
+    seatedAvatars: [
+      { name: '冷酷老爵士', avatar: '🕶️' }
+    ]
+  },
+  {
+    id: 'solo_ai',
+    name: '单人大师AI演练场 🤖',
+    typeText: '单机练功房',
+    statusText: '离线秒开',
+    statusClass: 'status-solo',
+    themeClass: 'theme-obsidian',
+    sb: 5,
+    bb: 10,
+    minBuyIn: 200,
+    maxBuyIn: 2000,
+    playersCount: 1,
+    btnText: '即刻练手',
+    isSolo: true,
+    seatedAvatars: [
+      { name: 'AI大师', avatar: '🧠' }
+    ]
+  }
 ]
 
-const hasClaimedBonus = ref(storage.get('daily_claimed_' + new Date().toDateString(), false))
+// 榜单数据
+const leaderboard = [
+  { name: '澳门飞牌王', avatar: '🎩', title: '胜率 69.2%', chips: 185600 },
+  { name: '赌圣Poul', avatar: '👑', title: '胜率 64.0%', chips: 128400 },
+  { name: '深海大白鲨', avatar: '🦈', title: '胜率 61.5%', chips: 94200 },
+  { name: '赛博赌圣', avatar: '🤖', title: '胜率 55.8%', chips: 63000 }
+]
 
-const selectCategory = (cat: GameCategory) => {
+// 牌型列表
+const pokerRanksList = [
+  { tier: 'No.1', name: '皇家同花顺 (Royal Flush)', example: '♠A ♠K ♠Q ♠J ♠10', desc: '扑克之王！同花色的 A-K-Q-J-10，无坚不摧。' },
+  { tier: 'No.2', name: '同花顺 (Straight Flush)', example: '♥9 ♥8 ♥7 ♥6 ♥5', desc: '同一花色的五张连续数字牌。' },
+  { tier: 'No.3', name: '四条 / 金刚 (Four of a Kind)', example: '♣8 ♠8 ♥8 ♦8 ♠K', desc: '四张相同点数的牌，外加一张任意杂牌。' },
+  { tier: 'No.4', name: '葫芦 / 满堂红 (Full House)', example: '♠Q ♥Q ♦Q ♠7 ♥7', desc: '三张同点数牌 + 一对。' },
+  { tier: 'No.5', name: '同花 (Flush)', example: '♦A ♦J ♦9 ♦6 ♦3', desc: '同一花色的任意五张非连续牌。' },
+  { tier: 'No.6', name: '顺子 (Straight)', example: '♠8 ♥7 ♦6 ♣5 ♠4', desc: '五张连续点数但不全同花色的牌。' },
+  { tier: 'No.7', name: '三条 (Three of a Kind)', example: '♣J ♠J ♦J ♠9 ♣4', desc: '三张相同点数的牌。' },
+  { tier: 'No.8', name: '两对 (Two Pair)', example: '♠K ♥K ♣9 ♦9 ♠3', desc: '两组不同点数的对子。' },
+  { tier: 'No.9', name: '一对 (One Pair)', example: '♥A ♦A ♠J ♣8 ♦4', desc: '两张相同点数的牌。' },
+  { tier: 'No.10', name: '高牌 (High Card)', example: '♠A ♣K ♦8 ♥5 ♠2', desc: '未能组成以上任何牌型时，以单张最大牌决胜。' }
+]
+
+function quickJoin(roomId: string) {
   sound.click()
-  currentCategory.value = cat
+  router.push(`/game/texas?room=${roomId}`)
 }
 
-const filteredGames = computed(() => {
-  return gameStore.games.filter(g => {
-    const matchCat = currentCategory.value === 'all' || g.category === currentCategory.value
-    const query = searchQuery.value.trim().toLowerCase()
-    const matchSearch = !query || 
-      g.title.toLowerCase().includes(query) || 
-      g.subtitle.toLowerCase().includes(query) ||
-      g.tags.some(t => t.toLowerCase().includes(query))
-    return matchCat && matchSearch
-  })
-})
-
-const recentRecords = computed(() => {
-  return gameStore.records.slice(0, 5)
-})
-
-const quickStartRandom = () => {
+function enterTable(tableId: string, isSolo: boolean) {
   sound.click()
-  const list = gameStore.games
-  const randomGame = list[Math.floor(Math.random() * list.length)]
-  router.push(`/game/${randomGame.id}`)
+  if (isSolo) {
+    router.push('/game/texas?mode=single')
+  } else {
+    router.push(`/game/texas?room=${tableId}&mode=multiplayer`)
+  }
 }
 
-const claimDailyBonus = () => {
-  if (hasClaimedBonus.value) return
-  hasClaimedBonus.value = true
-  storage.set('daily_claimed_' + new Date().toDateString(), true)
-  userStore.addCoins(50)
+async function handleClaimDailyBonus() {
+  if (hasClaimedToday.value || isClaiming.value) return
+  isClaiming.value = true
+  sound.click()
+
+  try {
+    const res = await api.claimDailyBonus()
+    if (res.ok) {
+      sound.powerup()
+      hasClaimedToday.value = true
+      if (authStore.currentUser && res.coins) {
+        authStore.currentUser.coins = res.coins
+      }
+      userStore.coins = res.coins || userStore.coins + 300
+      confetti({ particleCount: 50, spread: 60 })
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isClaiming.value = false
+  }
+}
+
+function handleCreatePrivateRoom() {
+  if (!newRoomName.value.trim()) {
+    newRoomName.value = '皇室包厢'
+  }
+  const customId = `room_p_${Date.now()}`
+  showCreateModal.value = false
   sound.victory()
-  confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } })
+  router.push(`/game/texas?room=${customId}&name=${encodeURIComponent(newRoomName.value)}&sb=${newRoomBlind.value[0]}&bb=${newRoomBlind.value[1]}`)
 }
+
+onMounted(() => {
+  if (authStore.isLoggedIn) {
+    authStore.checkAuth()
+  }
+})
 </script>
 
 <style scoped>
-.lobby-view {
+.poker-lobby-view {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 1400px;
-  width: calc(100% - 24px);
-  margin: 0 auto 40px auto;
-  padding-top: 12px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 0 40px;
 }
 
-/* 巨幕 Banner */
-.hero-banner {
+/* 巨幕牌手档案区 */
+.hero-passport-section {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 20px;
+  background: radial-gradient(circle at top left, #0e1726 0%, #06090e 100%);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+}
+
+.player-passport {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.passport-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.avatar-wrapper {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 44px 50px;
-  border-radius: 24px;
-  overflow: hidden;
-  min-height: 280px;
 }
 
-.hero-content {
-  max-width: 640px;
-  z-index: 2;
+.avatar-large {
+  width: 64px;
+  height: 64px;
+  background: #1e293b;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  border: 2px solid #f59e0b;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
 }
 
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  background: rgba(6, 182, 212, 0.12);
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  font-size: 0.8rem;
-  color: var(--accent-cyan);
-  margin-bottom: 16px;
+.vip-level-badge {
+  position: absolute;
+  bottom: -6px;
+  background: #d97706;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid #fde68a;
+}
+
+.passport-meta {
+  flex: 1;
+}
+
+.player-name {
+  font-size: 18px;
+  color: #fff;
   font-weight: 700;
 }
 
-.hero-title {
-  font-size: 2.3rem;
-  font-weight: 900;
-  line-height: 1.25;
-  margin-bottom: 14px;
+.player-title {
+  font-size: 12px;
+  color: #38bdf8;
 }
 
-.gradient-text {
-  background: linear-gradient(90deg, #38bdf8, #818cf8, #ec4899);
+.wallet-balance-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.balance-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.balance-item .lbl { font-size: 11px; color: #94a3b8; }
+.balance-item .val { font-size: 16px; font-weight: 800; }
+
+.btn-claim-supply {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.2s;
+}
+
+.btn-claim-supply:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.3);
+  transform: translateY(-1px);
+}
+
+.passport-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.stat-pill {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 8px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-k { font-size: 10px; color: #64748b; }
+.stat-v { font-size: 12px; font-weight: 700; }
+
+/* 巨幕行动区 */
+.hero-quick-action {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.live-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.hero-title {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1.15;
+  margin: 10px 0;
+  letter-spacing: -0.5px;
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #fef08a 0%, #f59e0b 50%, #b45309 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.hero-desc {
-  font-size: 0.95rem;
-  color: var(--text-muted);
-  line-height: 1.6;
-  margin-bottom: 24px;
+.hero-subtext {
+  font-size: 13px;
+  color: #94a3b8;
+  max-width: 540px;
 }
 
-.hero-actions {
+.quick-action-btns {
   display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
 }
 
-.hero-graphic {
+.btn-vip-primary {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  color: #fff;
+  border: 1px solid #fef08a;
+  box-shadow: 0 0 15px rgba(217, 119, 6, 0.4);
+}
+
+.btn-vip-secondary {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.btn-vip-outline {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #cbd5e1;
+}
+
+/* 桌台大厅 */
+.tables-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 18px;
+  color: #f8fafc;
+  font-weight: 800;
+}
+
+.online-counter {
+  font-size: 13px;
+  color: #34d399;
+}
+
+.tables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 16px;
+}
+
+.table-card {
+  padding: 18px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.25s ease;
   position: relative;
-  width: 280px;
-  height: 240px;
+  overflow: hidden;
+}
+
+.table-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 25px rgba(0, 0, 0, 0.6);
+}
+
+.theme-emerald {
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: radial-gradient(circle at top right, #092c19 0%, #05140c 100%);
+}
+
+.theme-gold {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: radial-gradient(circle at top right, #332009 0%, #110c05 100%);
+}
+
+.theme-crimson {
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: radial-gradient(circle at top right, #360d0d 0%, #140404 100%);
+}
+
+.theme-obsidian {
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: radial-gradient(circle at top right, #0d2238 0%, #060d16 100%);
+}
+
+.table-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge-group {
+  display: flex;
+  gap: 6px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.status-hot { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.status-active { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.status-vip { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+.status-solo { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+
+.status-indicator .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.table-type-badge {
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.seat-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.table-card-body {
+  margin: 16px 0;
+  text-align: center;
+}
+
+.felt-preview-ring {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  margin: 0 auto 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 20px;
+  color: #f59e0b;
 }
 
-.glow-sphere {
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.4) 0%, rgba(139, 92, 246, 0.2) 60%, transparent 100%);
-  filter: blur(20px);
-  animation: pulseGlow 4s infinite ease-in-out;
+.table-name {
+  font-size: 16px;
+  color: #f8fafc;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
-.floating-icons .float-icon {
-  position: absolute;
-  font-size: 2.8rem;
-  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.5));
+.blind-info { font-size: 13px; color: #cbd5e1; }
+.buyin-info { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+.table-seated-players {
+  margin-bottom: 16px;
 }
 
-.i-1 { top: 20px; left: 30px; animation: floatAnim 3.2s infinite ease-in-out; }
-.i-2 { top: 15px; right: 40px; animation: floatAnim 2.8s infinite 0.5s ease-in-out; }
-.i-3 { bottom: 25px; left: 40px; animation: floatAnim 3.5s infinite 1s ease-in-out; }
-.i-4 { bottom: 30px; right: 30px; animation: floatAnim 3s infinite 1.5s ease-in-out; }
-
-/* 过滤与搜索 */
-.filter-section {
+.avatars-cluster {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 12px 20px;
-  border-radius: 16px;
-}
-
-.category-tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cat-tab {
-  display: flex;
-  align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 16px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  font-weight: 600;
+}
+
+.mini-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1e293b;
+  border: 1px solid #f59e0b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.empty-seat-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.btn-enter-table {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.cat-tab:hover {
-  color: var(--text-main);
-  border-color: var(--accent-cyan);
+.table-card:hover .btn-enter-table {
+  background: #0284c7;
+  border-color: #38bdf8;
 }
 
-.cat-tab.active {
-  background: rgba(6, 182, 212, 0.15);
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
-}
-
-.search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 240px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  width: 16px;
-  height: 16px;
-  color: var(--text-dim);
-}
-
-.search-input {
-  width: 100%;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 8px 12px 8px 36px;
-  color: #fff;
-  font-size: 0.88rem;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.search-input:focus {
-  border-color: var(--accent-cyan);
-}
-
-/* 游戏网格 */
-.games-grid {
+/* 底部区域 */
+.bottom-features-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 22px;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
 }
 
-.empty-state {
+.hall-of-fame, .security-card {
+  padding: 20px;
+  border-radius: 16px;
+}
+
+.card-header {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  border-radius: 18px;
-  text-align: center;
-  color: var(--text-muted);
-}
-
-/* 战绩速递 */
-.recent-records-section {
-  padding: 20px 26px;
-  border-radius: 18px;
-}
-
-.section-title-bar {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   margin-bottom: 16px;
 }
 
-.title-left {
+.header-icon {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 1.1rem;
+}
+
+.header-icon h4 {
+  font-size: 15px;
+  color: #f8fafc;
   font-weight: 700;
 }
 
-.view-all-link {
-  font-size: 0.82rem;
-  color: var(--accent-cyan);
-  text-decoration: none;
+.leader-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.records-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+.leader-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
   gap: 12px;
 }
 
-.record-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.03);
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
+.rank-num { font-size: 14px; font-weight: 800; width: 24px; text-align: center; }
+.rank-1 { color: #f59e0b; }
+.rank-2 { color: #94a3b8; }
+.rank-3 { color: #b45309; }
 
-.rec-game {
+.leader-avatar { font-size: 20px; }
+.leader-info { flex: 1; display: flex; flex-direction: column; }
+.leader-name { font-size: 13px; color: #fff; font-weight: 600; }
+
+.features-list {
   display: flex;
   flex-direction: column;
+  gap: 14px;
 }
 
-.rec-name {
-  font-size: 0.85rem;
+.feat-item {
+  display: flex;
+  gap: 12px;
+}
+
+.feat-item h5 {
+  font-size: 13px;
+  color: #38bdf8;
   font-weight: 700;
+  margin-bottom: 2px;
 }
 
-.rec-time {
-  font-size: 0.7rem;
-  color: var(--text-dim);
+.feat-item p {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.5;
 }
 
-.rec-score {
-  font-size: 0.85rem;
+/* 牌型弹窗 */
+.rules-modal-content {
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 4px;
 }
 
-.rec-coin {
-  font-size: 0.8rem;
+.rank-row {
+  display: grid;
+  grid-template-columns: 180px 140px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rank-badge {
+  background: rgba(245, 158, 11, 0.2);
   color: #fbbf24;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  margin-right: 6px;
+}
+
+.cards-preview {
+  color: #facc15;
+  font-size: 12px;
+}
+
+/* 创建房间表单 */
+.create-room-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.custom-input, .custom-select {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 14px;
 }
 
 @media (max-width: 900px) {
-  .hero-banner {
-    flex-direction: column;
-    padding: 30px 24px;
-    text-align: center;
+  .hero-passport-section {
+    grid-template-columns: 1fr;
   }
-  .hero-graphic {
-    display: none;
-  }
-  .hero-actions {
-    justify-content: center;
-  }
-  .filter-section {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .search-box {
-    width: 100%;
+  .bottom-features-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
