@@ -51,6 +51,7 @@ class TexasRoom {
   public readonly TURN_TIME_LIMIT = 15
   public logMessages: { id: string; time: string; text: string; sender?: string }[] = []
   public isShortDeck: boolean = false
+  public clients: Set<WebSocket> = new Set()
 
   constructor(id: string, name: string, sb: number, bb: number, isShortDeck = false) {
     this.id = id
@@ -78,6 +79,8 @@ class TexasRoom {
   }
 
   public handleConnection(ws: WebSocket, query: URLSearchParams) {
+    this.clients.add(ws)
+
     // 建立新连接时发送房间快照
     this.sendSnapshot(ws)
 
@@ -107,6 +110,7 @@ class TexasRoom {
     })
 
     ws.on('close', () => {
+      this.clients.delete(ws)
       const idx = this.seats.findIndex(s => s && s.ws === ws)
       if (idx !== -1) {
         const p = this.seats[idx]!
@@ -182,10 +186,11 @@ class TexasRoom {
     }
   }
 
-  private handleChat(ws: WebSocket, msg: { text: string }) {
+  private handleChat(ws: WebSocket, msg: { text: string; sender?: string }) {
+    if (!msg.text || !msg.text.trim()) return
     const p = this.seats.find(s => s && s.ws === ws)
-    const sender = p ? p.nickname : '观战玩家'
-    this.addLog(msg.text, sender)
+    const sender = p ? p.nickname : (msg.sender || '观战牌手')
+    this.addLog(msg.text.trim(), sender)
   }
 
   public tryStartNewHand() {
@@ -517,18 +522,18 @@ class TexasRoom {
   }
 
   public broadcastSnapshot(isShowdown = false) {
-    for (const s of this.seats) {
-      if (s && s.ws && s.ws.readyState === WebSocket.OPEN) {
-        this.sendSnapshot(s.ws, isShowdown)
+    for (const ws of this.clients) {
+      if (ws.readyState === WebSocket.OPEN) {
+        this.sendSnapshot(ws, isShowdown)
       }
     }
   }
 
   public broadcast(data: any) {
     const raw = JSON.stringify(data)
-    for (const s of this.seats) {
-      if (s && s.ws && s.ws.readyState === WebSocket.OPEN) {
-        s.ws.send(raw)
+    for (const ws of this.clients) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(raw)
       }
     }
   }

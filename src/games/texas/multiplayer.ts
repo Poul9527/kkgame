@@ -159,11 +159,22 @@ export function useTexasMultiplayer() {
   }
 
   function chat(text: string) {
-    if (!ws.value || !text.trim()) return
-    ws.value.send(JSON.stringify({
-      type: 'chat',
-      text: text.trim()
-    }))
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const nickname = currentUser.value?.nickname || '牌友'
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      ws.value.send(JSON.stringify({
+        type: 'chat',
+        text: trimmed,
+        sender: nickname
+      }))
+    } else {
+      logs.value.push({
+        time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+        text: '⚠️ 当前未连入多人房间，无法发送消息',
+        sender: '系统'
+      })
+    }
   }
 
   function disconnect() {
