@@ -102,6 +102,30 @@ export const useGameStore = defineStore('game', () => {
       color: 'linear-gradient(135deg, #059669, #065f46)',
       hot: true,
       playCount: storage.get('plays_baquepai', 66)
+    },
+    {
+      id: 'draw-and-guess',
+      title: '你画我猜',
+      subtitle: 'DRAW & GUESS PARTY',
+      category: 'party',
+      description: '热门社交派对画猜！自由画板涂鸦，海量爆笑词库，实时画线同步与智能猜词互动。',
+      icon: '🎨',
+      tags: ['聚会派对', '灵魂画手', '趣味猜词'],
+      color: 'linear-gradient(135deg, #ec4899, #be185d)',
+      hot: true,
+      playCount: storage.get('plays_draw_guess', 52)
+    },
+    {
+      id: 'undercover',
+      title: '谁是卧底',
+      subtitle: 'WHO IS THE SPY',
+      category: 'party',
+      description: '经典聚会推理心理战！平民与卧底各执暗号，逐轮巧妙描摹，投票揪出潜伏者，更有绝地反猜翻盘！',
+      icon: '🕵️',
+      tags: ['推理社交', '心理战', '绝地反猜'],
+      color: 'linear-gradient(135deg, #6366f1, #4338ca)',
+      hot: true,
+      playCount: storage.get('plays_undercover', 48)
     }
   ])
 

@@ -110,6 +110,17 @@
             <li><b>当忍则忍</b>：摸到胡牌时可选择“忍”放弃胡牌，累计“忍”标记使最终胡牌收益疯狂翻倍；</li>
             <li><b>打空牌库多次胡牌</b>：单局胡牌不退场，持续摸打直至 84 张牌全部摸完进行全场大盘结算。</li>
           </ul>
+          <ul v-else-if="gameId === 'draw-and-guess'">
+            <li><b>我画你猜模式</b>：根据题目提示词在画板上进行简笔作画，右侧观众与 AI 会根据画作实时推理竞猜；</li>
+            <li><b>电脑画我来猜</b>：系统给出分类提示与字数，观察轮廓线条，输入正确的词语即可夺得分数；</li>
+            <li><b>丰富画图工具</b>：支持多种颜色、画笔粗细切换、橡皮擦与一键撤销功能。</li>
+          </ul>
+          <ul v-else-if="gameId === 'undercover'">
+            <li><b>身份分配</b>：大部分玩家拿到【平民词】，少数玩家拿到高度相似但不同的【卧底词】；</li>
+            <li><b>轮流陈述</b>：每位玩家顺时针依次用一句话描述自己的暗号，切忌直接说出原词或让卧底听出破绽；</li>
+            <li><b>公投放逐</b>：全员发言完毕后进行投票，票数最高者被淘汰出局；</li>
+            <li><b>卧底绝地反猜</b>：卧底被淘汰后可获得 1 次机会反猜平民词，猜对则直接逆转取胜！</li>
+          </ul>
         </div>
       </div>
       <template #footer>
@@ -137,6 +148,8 @@ import MinesweeperGame from '@/games/minesweeper/MinesweeperGame.vue'
 import ZhajinhuaGame from '@/games/zhajinhua/ZhajinhuaGame.vue'
 import TexasGame from '@/games/texas/TexasGame.vue'
 import BaquepaiGame from '@/games/baquepai/BaquepaiGame.vue'
+import DrawAndGuessGame from '@/games/draw-and-guess/DrawAndGuessGame.vue'
+import UndercoverGame from '@/games/undercover/UndercoverGame.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -156,7 +169,9 @@ const activeGameComponent = computed(() => {
     minesweeper: MinesweeperGame,
     zhajinhua: ZhajinhuaGame,
     texas: TexasGame,
-    baquepai: BaquepaiGame
+    baquepai: BaquepaiGame,
+    'draw-and-guess': DrawAndGuessGame,
+    undercover: UndercoverGame
   }
   return map[gameId.value] || null
 })

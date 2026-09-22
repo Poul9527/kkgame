@@ -1,4 +1,4 @@
-export type GameCategory = 'all' | 'board' | 'arcade' | 'puzzle' | 'shooter'
+export type GameCategory = 'all' | 'board' | 'arcade' | 'puzzle' | 'shooter' | 'party'
 
 export interface GameInfo {
   id: string
