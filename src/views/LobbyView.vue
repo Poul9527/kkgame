@@ -2,16 +2,45 @@
   <div class="poker-lobby-view">
     <!-- 巨幕尊荣牌手通行证与实时英雄区 -->
     <section class="hero-passport-section glass-panel">
-      <!-- 个人牌手档案明细 -->
-      <div class="player-passport">
+      <!-- 场景 A：未登录状态：明确提示需注册并登录 -->
+      <div v-if="!authStore.isLoggedIn" class="player-passport unlogged-passport">
         <div class="passport-header">
           <div class="avatar-wrapper">
-            <span class="avatar-large">{{ authStore.currentUser?.avatar || userStore.avatar || '🤠' }}</span>
+            <span class="avatar-large">👤</span>
+            <div class="vip-level-badge font-arcade">GUEST</div>
+          </div>
+          <div class="passport-meta">
+            <div class="player-identity">
+              <h2 class="player-name text-slate-300">游客牌手 (未登录)</h2>
+              <span class="player-title font-arcade text-amber-400">免费注册即送 🪙 1,000 启航体验金币</span>
+            </div>
+            <div class="wallet-balance-row">
+              <button class="btn-arcade btn-primary btn-passport-auth font-arcade" @click="authStore.openAuthModal('login')">
+                <LogIn class="w-4 h-4" />
+                <span>立即登录</span>
+              </button>
+              <button class="btn-arcade btn-passport-register font-arcade" @click="authStore.openAuthModal('register')">
+                <UserPlus class="w-4 h-4" />
+                <span>免费注册账号</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="passport-stats font-arcade unlogged-tips">
+          <span class="text-xs text-slate-400">⚠️ 当前处于未登录状态，参与多人实时桌台对决需注册登录账号以同步筹码资产。</span>
+        </div>
+      </div>
+
+      <!-- 场景 B：已登录状态：完整展示真实用户档案明细 -->
+      <div v-else class="player-passport">
+        <div class="passport-header">
+          <div class="avatar-wrapper">
+            <span class="avatar-large">{{ authStore.currentUser?.avatar || '🤠' }}</span>
             <div class="vip-level-badge font-arcade">VIP {{ userLevel }}</div>
           </div>
           <div class="passport-meta">
             <div class="player-identity">
-              <h2 class="player-name">{{ authStore.currentUser?.nickname || userStore.nickname || '神秘牌手' }}</h2>
+              <h2 class="player-name">{{ authStore.currentUser?.nickname }}</h2>
               <span class="player-title font-arcade">{{ playerRankTitle }}</span>
             </div>
             <!-- 实时代币钱包 -->
@@ -36,15 +65,15 @@
         <div class="passport-stats font-arcade">
           <div class="stat-pill">
             <span class="stat-k">总手牌</span>
-            <span class="stat-v text-slate-200">{{ gameStore.records.filter(r => r.gameId === 'texas').length + 18 }}</span>
+            <span class="stat-v text-slate-200">{{ gameStore.records.filter(r => r.gameId === 'texas').length }}</span>
           </div>
           <div class="stat-pill">
-            <span class="stat-k">入局胜率</span>
-            <span class="stat-v text-emerald-400">58.4%</span>
+            <span class="stat-k">账号</span>
+            <span class="stat-v text-emerald-400">@{{ authStore.currentUser?.username }}</span>
           </div>
           <div class="stat-pill">
-            <span class="stat-k">最佳牌型</span>
-            <span class="stat-v text-cyan-400">皇家同花顺 👑</span>
+            <span class="stat-k">资产状态</span>
+            <span class="stat-v text-cyan-400">云端已同步 🟢</span>
           </div>
         </div>
       </div>
@@ -310,7 +339,8 @@ import Modal from '@/components/common/Modal.vue'
 import confetti from 'canvas-confetti'
 import { 
   Gift, Zap, Plus, BookOpen, Sparkles, Users, 
-  ChevronRight, Trophy, ShieldCheck, Lock, Database, Activity, Gamepad2 
+  ChevronRight, Trophy, ShieldCheck, Lock, Database, Activity, Gamepad2,
+  LogIn, UserPlus
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -328,7 +358,7 @@ const newRoomName = ref('')
 const newRoomBlind = ref([10, 20])
 
 const currentCoins = computed(() => {
-  return authStore.currentUser?.coins ?? userStore.coins ?? 2000
+  return authStore.currentUser?.coins ?? 0
 })
 
 const userLevel = computed(() => {
@@ -491,11 +521,19 @@ const pokerRanksList = [
 
 function quickJoin(roomId: string) {
   sound.click()
+  if (!authStore.isLoggedIn) {
+    authStore.openAuthModal('login')
+    return
+  }
   router.push(`/game/texas?room=${roomId}`)
 }
 
 function enterTable(tableId: string, isSolo: boolean, isShort = false) {
   sound.click()
+  if (!isSolo && !authStore.isLoggedIn) {
+    authStore.openAuthModal('login')
+    return
+  }
   if (isSolo) {
     router.push(`/game/texas?mode=single${isShort ? '&variant=shortdeck' : ''}`)
   } else {
@@ -504,6 +542,10 @@ function enterTable(tableId: string, isSolo: boolean, isShort = false) {
 }
 
 async function handleClaimDailyBonus() {
+  if (!authStore.isLoggedIn) {
+    authStore.openAuthModal('login')
+    return
+  }
   if (hasClaimedToday.value || isClaiming.value) return
   isClaiming.value = true
   sound.click()
@@ -527,6 +569,11 @@ async function handleClaimDailyBonus() {
 }
 
 function handleCreatePrivateRoom() {
+  if (!authStore.isLoggedIn) {
+    showCreateModal.value = false
+    authStore.openAuthModal('login')
+    return
+  }
   if (!newRoomName.value.trim()) {
     newRoomName.value = '皇室包厢'
   }
@@ -574,6 +621,36 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   padding: 20px;
+}
+
+.unlogged-passport {
+  border-color: rgba(56, 189, 248, 0.3) !important;
+  background: radial-gradient(circle at top left, rgba(14, 23, 38, 0.8) 0%, rgba(6, 9, 14, 0.9) 100%) !important;
+}
+
+.btn-passport-auth {
+  padding: 6px 14px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-passport-register {
+  padding: 6px 14px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, #ec4899, #be185d);
+  color: #fff;
+  border: 1px solid #f472b6;
+}
+
+.unlogged-tips {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
 .passport-header {

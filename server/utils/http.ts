@@ -24,11 +24,30 @@ export function parseJsonBody(req: any): Promise<any> {
   })
 }
 
-export function jsonResponse(res: any, status: number, data: any) {
+export function getCookie(req: any, name: string): string | null {
+  const cookieHeader = req.headers?.cookie || req.headers?.Cookie || ''
+  if (!cookieHeader) return null
+  const cookies = cookieHeader.split(';')
+  for (const c of cookies) {
+    const [k, v] = c.trim().split('=')
+    if (k === name) return decodeURIComponent(v || '')
+  }
+  return null
+}
+
+export function setAuthCookie(token: string, maxAge = 2592000): string {
+  return `token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+}
+
+export function clearAuthCookie(): string {
+  return `token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+}
+
+export function jsonResponse(res: any, status: number, data: any, customHeaders: Record<string, string | string[]> = {}) {
   res.setHeader('Content-Type', 'application/json')
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  for (const [k, v] of Object.entries(customHeaders)) {
+    res.setHeader(k, v)
+  }
   res.statusCode = status
   res.end(JSON.stringify(data))
 }

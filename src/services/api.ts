@@ -45,6 +45,7 @@ export const api = {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: getHeaders(),
+        credentials: 'include',
         body: JSON.stringify(data)
       })
       return await parseResponse(res)
@@ -59,6 +60,7 @@ export const api = {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: getHeaders(),
+        credentials: 'include',
         body: JSON.stringify(data)
       })
       return await parseResponse(res)
@@ -67,12 +69,27 @@ export const api = {
     }
   },
 
-  // 获取当前登录用户
+  // 退出登录
+  async logout(): Promise<ApiResponse> {
+    try {
+      const res = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: getHeaders(),
+        credentials: 'include'
+      })
+      return await parseResponse(res)
+    } catch (e: any) {
+      return { ok: false, error: e.message }
+    }
+  },
+
+  // 获取当前登录用户 (支持 Authorization header 或 Cookie)
   async getProfile(): Promise<ApiResponse> {
     try {
       const res = await fetch('/api/auth/me', {
         method: 'GET',
-        headers: getHeaders()
+        headers: getHeaders(),
+        credentials: 'include'
       })
       return await parseResponse(res)
     } catch (e: any) {
@@ -85,7 +102,8 @@ export const api = {
     try {
       const res = await fetch('/api/wallet/claim', {
         method: 'POST',
-        headers: getHeaders()
+        headers: getHeaders(),
+        credentials: 'include'
       })
       return await parseResponse(res)
     } catch (e: any) {

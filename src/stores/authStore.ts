@@ -74,24 +74,39 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // 退出登录
-  const logout = () => {
+  const logout = async () => {
     token.value = ''
     currentUser.value = null
     localStorage.removeItem('kk_token')
     localStorage.removeItem('kk_user')
+    try {
+      await api.logout()
+    } catch {}
     sound.click()
   }
 
-  // 尝试恢复并刷新当前用户信息
+  // 尝试恢复并刷新当前用户信息 (优先读 Authorization 或 HttpOnly Cookie)
   const checkAuth = async () => {
-    if (!token.value) return
-    const res = await api.getProfile()
-    if (res.ok && res.user) {
-      currentUser.value = res.user
-      localStorage.setItem('kk_user', JSON.stringify(res.user))
-      syncToUserStore(res.user)
-    } else {
-      logout()
+    try {
+      const res = await api.getProfile()
+      if (res.ok && res.user) {
+        currentUser.value = res.user
+        if (res.token) {
+          token.value = res.token
+          localStorage.setItem('kk_token', res.token)
+        }
+        localStorage.setItem('kk_user', JSON.stringify(res.user))
+        syncToUserStore(res.user)
+      } else {
+        if (token.value) {
+          token.value = ''
+          currentUser.value = null
+          localStorage.removeItem('kk_token')
+          localStorage.removeItem('kk_user')
+        }
+      }
+    } catch (e) {
+      console.warn('Check auth failed:', e)
     }
   }
 

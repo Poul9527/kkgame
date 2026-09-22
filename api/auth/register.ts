@@ -1,6 +1,6 @@
 import { getDb, initDatabase } from '../../server/db/client.js'
 import { hashPassword, signToken } from '../../server/utils/auth.js'
-import { parseJsonBody, jsonResponse } from '../../server/utils/http.js'
+import { parseJsonBody, jsonResponse, setAuthCookie } from '../../server/utils/http.js'
 import crypto from 'crypto'
 
 export default async function handler(req: any, res: any) {
@@ -68,6 +68,8 @@ export default async function handler(req: any, res: any) {
       avatar: finalAvatar
     })
 
+    const cookie = setAuthCookie(token)
+
     return jsonResponse(res, 200, {
       ok: true,
       message: '注册成功，已获赠 1000 金币！',
@@ -79,6 +81,8 @@ export default async function handler(req: any, res: any) {
         avatar: finalAvatar,
         coins: initialCoins
       }
+    }, {
+      'Set-Cookie': cookie
     })
   } catch (err: any) {
     console.error('Register error:', err)

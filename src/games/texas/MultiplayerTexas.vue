@@ -361,6 +361,25 @@
         </div>
       </aside>
     </div>
+
+    <!-- 未登录强制登录遮罩 -->
+    <div v-if="!authStore.isLoggedIn" class="unlogged-gate-overlay">
+      <div class="unlogged-card glass-panel">
+        <ShieldAlert class="w-12 h-12 text-amber-400 mb-2" />
+        <h3 class="text-lg font-bold text-white font-arcade">真人德州牌桌 · 需登录入场</h3>
+        <p class="text-xs text-slate-300 mt-2 text-center max-w-sm">
+          为了保障筹码与积分资产安全，参与真人实时牌桌对局需登录专属账号。新用户注册即送 🪙 1,000 启航体验金币！
+        </p>
+        <div class="gate-actions mt-4 flex gap-3">
+          <button class="btn-arcade btn-primary" @click="authStore.openAuthModal('login')">
+            <span>已有账号，立即登录</span>
+          </button>
+          <button class="btn-arcade btn-secondary" @click="authStore.openAuthModal('register')">
+            <span>免费注册 (送1000)</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -511,14 +530,25 @@ function switchRoom(roomId: string) {
 }
 
 function connectToRoom() {
+  if (!authStore.isLoggedIn || !authStore.currentUser) {
+    return
+  }
   const user = {
-    userId: authStore.currentUser?.id || `guest_${Date.now()}`,
-    nickname: authStore.currentUser?.nickname || userStore.nickname || '牌手',
-    avatar: authStore.currentUser?.avatar || userStore.avatar || '🤠',
-    chips: authStore.currentUser?.coins ?? userStore.coins ?? 2000
+    userId: authStore.currentUser.id,
+    nickname: authStore.currentUser.nickname,
+    avatar: authStore.currentUser.avatar,
+    chips: authStore.currentUser.coins
   }
   multiplayer.connect(currentRoomId.value, user)
 }
+
+watch(() => authStore.isLoggedIn, (logged) => {
+  if (logged) {
+    connectToRoom()
+  } else {
+    multiplayer.disconnect()
+  }
+})
 
 function handleSitClick(seatIndex?: number) {
   if (!authStore.isLoggedIn) {
@@ -1345,5 +1375,30 @@ onUnmounted(() => {
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 4px 0 #9f1239, 0 0 15px rgba(244, 63, 94, 0.4); }
   50% { box-shadow: 0 4px 0 #9f1239, 0 0 25px rgba(244, 63, 94, 0.8); }
+}
+
+.unlogged-gate-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.88);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.unlogged-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(245, 158, 11, 0.2);
 }
 </style>

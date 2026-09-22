@@ -4,10 +4,10 @@ import { storage } from '@/utils/storage'
 import { sound } from '@/utils/soundEngine'
 
 export const useUserStore = defineStore('user', () => {
-  const coins = ref<number>(storage.get('user_coins', 100))
+  const coins = ref<number>(storage.get('user_coins', 0))
   const exp = ref<number>(storage.get('user_exp', 0))
-  const nickname = ref<string>(storage.get('user_nickname', 'CyberPlayer'))
-  const avatar = ref<string>(storage.get('user_avatar', '🎮'))
+  const nickname = ref<string>(storage.get('user_nickname', ''))
+  const avatar = ref<string>(storage.get('user_avatar', '🤠'))
   const currentTheme = ref<string>(storage.get('user_theme', 'neon'))
   const unlockedThemes = ref<string[]>(storage.get('user_themes', ['neon']))
   const soundEnabled = ref<boolean>(storage.get('user_sound', true))
@@ -69,7 +69,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const setNickname = (name: string) => {
-    nickname.value = name.trim() || 'CyberPlayer'
+    nickname.value = name.trim() || ''
     storage.set('user_nickname', nickname.value)
   }
 

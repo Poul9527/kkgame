@@ -1,6 +1,6 @@
 import { getDb, initDatabase } from '../../server/db/client.js'
 import { verifyToken } from '../../server/utils/auth.js'
-import { jsonResponse } from '../../server/utils/http.js'
+import { jsonResponse, getCookie } from '../../server/utils/http.js'
 
 export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
@@ -8,10 +8,13 @@ export default async function handler(req: any, res: any) {
   }
 
   const authHeader = req.headers.authorization || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '')
+  let token = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!token) {
+    token = getCookie(req, 'token') || ''
+  }
 
   if (!token) {
-    return jsonResponse(res, 401, { error: '未登录或登录已失效' })
+    return jsonResponse(res, 401, { error: '未登录或登录凭证已失效' })
   }
 
   const payload = verifyToken(token)

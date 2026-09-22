@@ -1,6 +1,6 @@
 import { getDb, initDatabase } from '../../server/db/client.js'
 import { verifyToken } from '../../server/utils/auth.js'
-import { jsonResponse } from '../../server/utils/http.js'
+import { jsonResponse, getCookie } from '../../server/utils/http.js'
 import crypto from 'crypto'
 
 export default async function handler(req: any, res: any) {
@@ -12,7 +12,10 @@ export default async function handler(req: any, res: any) {
   }
 
   const authHeader = req.headers.authorization || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '')
+  let token = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!token) {
+    token = getCookie(req, 'token') || ''
+  }
 
   if (!token) {
     return jsonResponse(res, 401, { error: '请先登录账号' })

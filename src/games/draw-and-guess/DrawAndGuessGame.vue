@@ -269,6 +269,25 @@
         </button>
       </div>
     </Modal>
+
+    <!-- 未登录入场遮罩 -->
+    <div v-if="!authStore.isLoggedIn" class="unlogged-gate-overlay">
+      <div class="unlogged-card glass-panel">
+        <ShieldAlert class="w-12 h-12 text-pink-400 mb-2" />
+        <h3 class="text-lg font-bold text-white font-arcade">你画我猜 · 需登录入场</h3>
+        <p class="text-xs text-slate-300 mt-2 text-center max-w-sm">
+          为了同步竞猜得分与画师排位战绩，参与多人实时画猜对局需登录专属账号。新用户注册即送 🪙 1,000 启航礼金！
+        </p>
+        <div class="gate-actions mt-4 flex gap-3">
+          <button class="btn-arcade btn-primary" @click="authStore.openAuthModal('login')">
+            <span>已有账号，立即登录</span>
+          </button>
+          <button class="btn-arcade btn-secondary" @click="authStore.openAuthModal('register')">
+            <span>免费注册 (送1000)</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -282,7 +301,7 @@ import Modal from '@/components/common/Modal.vue'
 import confetti from 'canvas-confetti'
 import { 
   Clock, RotateCcw, Share2, Plus, Sparkles, MessageSquare, 
-  Eraser, Undo2, Trash2 
+  Eraser, Undo2, Trash2, ShieldAlert 
 } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
@@ -334,13 +353,24 @@ const seatsDisplay = computed(() => {
 
 function switchRoom(roomId: string, name?: string) {
   currentRoomId.value = roomId
+  if (!authStore.isLoggedIn || !authStore.currentUser) {
+    return
+  }
   const user = {
-    userId: authStore.currentUser?.id || `guest_${Date.now()}`,
-    nickname: authStore.currentUser?.nickname || userStore.nickname || '画友',
-    avatar: authStore.currentUser?.avatar || userStore.avatar || '🎨'
+    userId: authStore.currentUser.id,
+    nickname: authStore.currentUser.nickname,
+    avatar: authStore.currentUser.avatar
   }
   multiplayer.connect(roomId, user, name)
 }
+
+watch(() => authStore.isLoggedIn, (logged) => {
+  if (logged) {
+    switchRoom(currentRoomId.value)
+  } else {
+    multiplayer.disconnect()
+  }
+})
 
 function handleCreateRoom() {
   const roomId = customRoomId.value.trim() || `draw_${Date.now()}`
@@ -1067,5 +1097,30 @@ onUnmounted(() => {
   color: #fff;
   font-size: 13px;
   margin-top: 4px;
+}
+
+.unlogged-gate-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.88);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.unlogged-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(236, 72, 153, 0.4);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(236, 72, 153, 0.2);
 }
 </style>

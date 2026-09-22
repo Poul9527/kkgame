@@ -1,6 +1,6 @@
 import { getDb, initDatabase } from '../../server/db/client.js'
 import { comparePassword, signToken } from '../../server/utils/auth.js'
-import { parseJsonBody, jsonResponse } from '../../server/utils/http.js'
+import { parseJsonBody, jsonResponse, setAuthCookie } from '../../server/utils/http.js'
 
 export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
@@ -55,6 +55,8 @@ export default async function handler(req: any, res: any) {
       avatar: row.avatar
     })
 
+    const cookie = setAuthCookie(token)
+
     return jsonResponse(res, 200, {
       ok: true,
       token,
@@ -65,6 +67,8 @@ export default async function handler(req: any, res: any) {
         avatar: row.avatar,
         coins: row.coins ?? 1000
       }
+    }, {
+      'Set-Cookie': cookie
     })
   } catch (err: any) {
     console.error('Login error:', err)
