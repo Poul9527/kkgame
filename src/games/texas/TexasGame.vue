@@ -1,33 +1,71 @@
 <template>
   <div class="texas-container">
     <!-- 顶部玩法模式切换栏 -->
-    <div class="texas-mode-bar glass-panel">
-      <div class="mode-tabs">
-        <button 
-          class="mode-tab" 
-          :class="{ active: playMode === 'multiplayer' }"
-          @click="playMode = 'multiplayer'"
-        >
-          <Users class="w-4 h-4 text-cyan-400" />
-          <span>🌐 真人对决 (在线联机 - 纯真人无BOT)</span>
-          <span class="live-pill">实时真人</span>
-        </button>
-        <button 
-          class="mode-tab" 
-          :class="{ active: playMode === 'single' }"
-          @click="playMode = 'single'"
-        >
-          <Bot class="w-4 h-4 text-emerald-400" />
-          <span>🤖 单机人机练手 (离线AI配置)</span>
-        </button>
+    <header class="texas-mode-bar glass-panel">
+      <div class="hud-left">
+        <router-link to="/lobby" class="hud-back-btn" title="返回游戏大厅">
+          <ChevronLeft class="w-4 h-4" />
+          <span>大厅</span>
+        </router-link>
+
+        <div class="mode-tabs">
+          <button 
+            class="mode-tab" 
+            :class="{ active: playMode === 'multiplayer' }"
+            @click="playMode = 'multiplayer'"
+          >
+            <Users class="w-4 h-4 text-cyan-400" />
+            <span>🌐 真人对决 (纯真人无BOT)</span>
+            <span class="live-pill">实时联机</span>
+          </button>
+          <button 
+            class="mode-tab" 
+            :class="{ active: playMode === 'single' }"
+            @click="playMode = 'single'"
+          >
+            <Bot class="w-4 h-4 text-emerald-400" />
+            <span>🤖 单机人机练手 (智能AI)</span>
+          </button>
+        </div>
       </div>
-    </div>
+
+      <div class="hud-right" v-if="playMode === 'single'">
+        <!-- 短牌 6+ 与 标准规则切换 -->
+        <div class="variant-toggle-group">
+          <button 
+            class="variant-btn" 
+            :class="{ active: variant === 'standard' }"
+            :disabled="isHandInProgress"
+            @click="switchVariant('standard')"
+          >
+            ♠ 标准德州 (52张)
+          </button>
+          <button 
+            class="variant-btn is-short" 
+            :class="{ active: variant === 'shortdeck' }"
+            :disabled="isHandInProgress"
+            @click="switchVariant('shortdeck')"
+          >
+            ⚡ 短牌 6+ (36张)
+          </button>
+        </div>
+      </div>
+    </header>
 
     <!-- 多人在线模式 -->
     <MultiplayerTexas v-if="playMode === 'multiplayer'" :initial-room-id="routeRoomId" />
 
     <!-- 单机人机练习模式 -->
     <div v-else class="single-player-view">
+      <!-- 短牌 6+ 规则提示条 -->
+      <div v-if="variant === 'shortdeck'" class="short-deck-banner">
+        <div class="banner-inner">
+          <Sparkles class="w-4 h-4 text-amber-400 animate-spin" />
+          <span class="banner-title font-arcade font-bold text-amber-300">短牌 6+ 规则生效中：</span>
+          <span class="banner-rules text-slate-200">剔除 2~5 牌（共36张）· <b>同花大于葫芦</b> · <b>A-6-7-8-9 算最小顺子</b></span>
+        </div>
+      </div>
+
       <!-- AI 练习模式控制面板 -->
       <div class="bot-control-toolbar glass-panel">
         <div class="toolbar-section">
@@ -55,7 +93,7 @@
         </div>
 
         <div class="toolbar-section">
-          <span class="toolbar-title font-arcade">⚡ 节奏:</span>
+          <span class="toolbar-title font-arcade">⚡ 决策速度:</span>
           <div class="speed-chips">
             <button 
               class="speed-btn" 
@@ -89,7 +127,7 @@
         </div>
       </div>
 
-      <!-- 顶部状态栏 -->
+      <!-- 顶部状态仪表板 -->
       <div class="game-dashboard glass-panel">
         <div class="stat-card">
           <span class="stat-label">总底池</span>
@@ -112,207 +150,244 @@
         </div>
       </div>
 
-      <!-- 德州扑克豪华主牌桌 -->
-      <div class="texas-table-wrapper">
-        <div class="texas-felt">
-          <!-- 豪华皮质扶手外圈 -->
-          <div class="leather-armrest"></div>
-          <!-- 黄铜内饰边框 -->
-          <div class="brass-bezel"></div>
-          <!-- 祖母绿桌布内芯 -->
-          <div class="felt-inner">
-            <!-- 暗纹水印 -->
-            <div class="felt-watermark">
-              <span class="wm-suit">♠</span>
-              <span class="wm-text font-arcade">KK POKER CLUB</span>
-              <span class="wm-suit">♠</span>
-            </div>
-
-            <!-- 牌桌中央公共区域 (5张公共牌 + 底池) -->
-            <div class="community-board">
-              <div class="pot-display-box font-arcade">
-                <span class="pot-tag">POT</span>
-                <span class="pot-amount">🪙 {{ pot }}</span>
-              </div>
-
-              <!-- 5 张公共牌槽位 -->
-              <div class="community-cards-row">
-                <div 
-                  v-for="(card, i) in 5" 
-                  :key="i" 
-                  class="comm-card-slot"
-                >
-                  <transition name="card-flip">
-                    <div 
-                      v-if="communityCards[i]" 
-                      class="poker-card comm-card"
-                      :class="{ 'is-winning-card': isCardInBestFive(communityCards[i]) }"
-                    >
-                      <span class="card-corner top" :style="{ color: getSuitColor(communityCards[i].suit) }">
-                        {{ getRankDisplay(communityCards[i].rank) }}<br>{{ getSuitSymbol(communityCards[i].suit) }}
-                      </span>
-                      <span class="card-center-suit" :style="{ color: getSuitColor(communityCards[i].suit) }">
-                        {{ getSuitSymbol(communityCards[i].suit) }}
-                      </span>
-                      <span class="card-corner bottom" :style="{ color: getSuitColor(communityCards[i].suit) }">
-                        {{ getRankDisplay(communityCards[i].rank) }}<br>{{ getSuitSymbol(communityCards[i].suit) }}
-                      </span>
-                    </div>
-                    <div v-else class="empty-card-placeholder">
-                      <span class="placeholder-dot"></span>
-                    </div>
-                  </transition>
+      <!-- 练习主竞技场：左为牌桌与控制台，右侧常驻战报与AI分析 -->
+      <div class="main-poker-arena">
+        <!-- 牌桌与控制台 -->
+        <div class="table-play-zone">
+          <div class="texas-table-wrapper">
+            <div class="texas-felt">
+              <!-- 奢华暗黑皮革缝线扶手垫 -->
+              <div class="leather-armrest"></div>
+              <!-- 黄铜微光金属内嵌饰边 -->
+              <div class="brass-bezel"></div>
+              <!-- 祖母绿桌布内芯 -->
+              <div class="felt-inner">
+                <!-- 暗纹水印 -->
+                <div class="felt-watermark">
+                  <span class="wm-suit">♠</span>
+                  <span class="wm-text font-arcade">KK POKER CLUB</span>
+                  <span class="wm-suit">♠</span>
                 </div>
-              </div>
-            </div>
 
-            <!-- 动态渲染 2~6 位玩家席位 -->
-            <div 
-              v-for="(p, pIdx) in players" 
-              :key="p.id"
-              class="seat"
-              :class="[
-                getSeatPositionClass(pIdx, players.length),
-                { 'is-turn': activePlayerIndex === pIdx && !p.isFolded && (stage !== 'idle' && stage !== 'ended' && stage !== 'showdown') },
-                { 'is-folded': p.isFolded },
-                { 'is-human': p.isHuman }
-              ]"
-            >
-              <!-- 玩家状态头部 -->
-              <div class="seat-head" :class="{ 'me-head': p.isHuman }">
-                <div class="player-avatar">{{ p.avatar }}</div>
-                <div class="player-meta">
-                  <div class="player-name-row">
-                    <span class="player-name">{{ p.name }}</span>
-                    <span v-if="!p.isHuman" class="bot-badge" :title="p.personality">
-                      {{ getPersonalityBadge(p.personality) }}
-                    </span>
+                <!-- 牌桌中央公共区域 (5张公共牌 + 底池) -->
+                <div class="community-board">
+                  <div class="pot-display-box font-arcade">
+                    <span class="pot-tag">POT</span>
+                    <span class="pot-amount">🪙 {{ pot }}</span>
                   </div>
-                  <span class="player-chips font-arcade">🪙 {{ p.isHuman ? userStore.coins : p.chips }}</span>
-                </div>
-                <!-- 庄家标志 -->
-                <div v-if="dealerIndex === pIdx" class="dealer-btn font-arcade">D</div>
-              </div>
 
-              <!-- 玩家手牌 (2 张) -->
-              <div class="player-cards">
-                <div 
-                  v-for="(card, ci) in (p.cards.length ? p.cards : 2)" 
-                  :key="ci" 
-                  class="poker-card small-card"
-                  :class="{ 
-                    'revealed': p.isHuman || (stage === 'showdown' || stage === 'ended'),
-                    'is-winning-card': (stage === 'showdown' || stage === 'ended') && typeof card === 'object' && isCardInBestFive(card) && p.id === winner?.id 
-                  }"
-                >
-                  <template v-if="(p.isHuman || stage === 'showdown' || stage === 'ended') && typeof card === 'object' && card.rank > 0">
-                    <span class="card-corner top" :style="{ color: getSuitColor(card.suit) }">
-                      {{ getRankDisplay(card.rank) }}<br>{{ getSuitSymbol(card.suit) }}
-                    </span>
-                    <span class="card-center-suit" :style="{ color: getSuitColor(card.suit) }">
-                      {{ getSuitSymbol(card.suit) }}
-                    </span>
-                    <span class="card-corner bottom" :style="{ color: getSuitColor(card.suit) }">
-                      {{ getRankDisplay(card.rank) }}<br>{{ getSuitSymbol(card.suit) }}
-                    </span>
-                  </template>
-                  <template v-else>
-                    <div class="card-back-pattern">
-                      <div class="back-inner-diamond">♠</div>
+                  <!-- 5 张公共牌槽位 -->
+                  <div class="community-cards-row">
+                    <div 
+                      v-for="(card, i) in 5" 
+                      :key="i" 
+                      class="comm-card-slot"
+                    >
+                      <transition name="card-flip">
+                        <div 
+                          v-if="communityCards[i]" 
+                          class="poker-card comm-card"
+                          :class="{ 'is-winning-card': isCardInBestFive(communityCards[i]) }"
+                        >
+                          <span class="card-corner top" :style="{ color: getSuitColor(communityCards[i].suit) }">
+                            {{ getRankDisplay(communityCards[i].rank) }}<br>{{ getSuitSymbol(communityCards[i].suit) }}
+                          </span>
+                          <span class="card-center-suit" :style="{ color: getSuitColor(communityCards[i].suit) }">
+                            {{ getSuitSymbol(communityCards[i].suit) }}
+                          </span>
+                          <span class="card-corner bottom" :style="{ color: getSuitColor(communityCards[i].suit) }">
+                            {{ getRankDisplay(communityCards[i].rank) }}<br>{{ getSuitSymbol(communityCards[i].suit) }}
+                          </span>
+                        </div>
+                        <div v-else class="empty-card-placeholder">
+                          <span class="placeholder-dot"></span>
+                        </div>
+                      </transition>
                     </div>
-                  </template>
+                  </div>
                 </div>
-              </div>
 
-              <!-- 下注与状态气泡 -->
-              <div class="bet-bubble font-arcade" v-if="p.currentRoundBet > 0">
-                下注: 🪙 {{ p.currentRoundBet }}
-              </div>
-              <div class="status-bubble font-arcade" v-else-if="p.statusText">
-                {{ p.statusText }}
-              </div>
+                <!-- 动态渲染 2~6 位玩家席位 -->
+                <div 
+                  v-for="(p, pIdx) in players" 
+                  :key="p.id"
+                  class="seat"
+                  :class="[
+                    getSeatPositionClass(pIdx, players.length),
+                    { 'is-turn': activePlayerIndex === pIdx && !p.isFolded && (stage !== 'idle' && stage !== 'ended' && stage !== 'showdown') },
+                    { 'is-folded': p.isFolded },
+                    { 'is-human': p.isHuman }
+                  ]"
+                >
+                  <!-- 玩家状态头部 -->
+                  <div class="seat-head" :class="{ 'me-head': p.isHuman }">
+                    <div class="player-avatar">{{ p.avatar }}</div>
+                    <div class="player-meta">
+                      <div class="player-name-row">
+                        <span class="player-name">{{ p.name }}</span>
+                        <span v-if="!p.isHuman" class="bot-badge" :title="p.personality">
+                          {{ getPersonalityBadge(p.personality) }}
+                        </span>
+                      </div>
+                      <span class="player-chips font-arcade">🪙 {{ p.isHuman ? userStore.coins : p.chips }}</span>
+                    </div>
+                    <!-- 庄家标志 -->
+                    <div v-if="dealerIndex === pIdx" class="dealer-btn font-arcade">D</div>
+                  </div>
 
-              <!-- 实时手牌评级预估 (本人) 或摊牌最终牌型 (电脑) -->
-              <div v-if="p.isHuman && myEvaluatedHand && stage !== 'idle'" class="hand-rank-pill font-arcade">
-                {{ myEvaluatedHand.rankName }}
-              </div>
-              <div v-else-if="(stage === 'showdown' || stage === 'ended') && p.evaluatedHand" class="hand-rank-pill" :class="{ 'is-winner': p.id === winner?.id }">
-                {{ p.isFolded ? '已弃牌' : p.evaluatedHand.rankName }}
+                  <!-- 玩家手牌 (2 张) -->
+                  <div class="player-cards">
+                    <div 
+                      v-for="(card, ci) in (p.cards.length ? p.cards : 2)" 
+                      :key="ci" 
+                      class="poker-card small-card"
+                      :class="{ 
+                        'revealed': p.isHuman || (stage === 'showdown' || stage === 'ended'),
+                        'is-winning-card': (stage === 'showdown' || stage === 'ended') && typeof card === 'object' && isCardInBestFive(card) && p.id === winner?.id 
+                      }"
+                    >
+                      <template v-if="(p.isHuman || stage === 'showdown' || stage === 'ended') && typeof card === 'object' && card.rank > 0">
+                        <span class="card-corner top" :style="{ color: getSuitColor(card.suit) }">
+                          {{ getRankDisplay(card.rank) }}<br>{{ getSuitSymbol(card.suit) }}
+                        </span>
+                        <span class="card-center-suit" :style="{ color: getSuitColor(card.suit) }">
+                          {{ getSuitSymbol(card.suit) }}
+                        </span>
+                        <span class="card-corner bottom" :style="{ color: getSuitColor(card.suit) }">
+                          {{ getRankDisplay(card.rank) }}<br>{{ getSuitSymbol(card.suit) }}
+                        </span>
+                      </template>
+                      <template v-else>
+                        <div class="card-back-pattern">
+                          <div class="back-inner-diamond">♠</div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- 下注与状态气泡 -->
+                  <div class="bet-bubble font-arcade" v-if="p.currentRoundBet > 0">
+                    下注: 🪙 {{ p.currentRoundBet }}
+                  </div>
+                  <div class="status-bubble font-arcade" v-else-if="p.statusText">
+                    {{ p.statusText }}
+                  </div>
+
+                  <!-- 实时手牌评级预估 (本人) 或摊牌最终牌型 (电脑) -->
+                  <div v-if="p.isHuman && myEvaluatedHand && stage !== 'idle'" class="hand-rank-pill font-arcade">
+                    {{ myEvaluatedHand.rankName }}
+                  </div>
+                  <div v-else-if="(stage === 'showdown' || stage === 'ended') && p.evaluatedHand" class="hand-rank-pill" :class="{ 'is-winner': p.id === winner?.id }">
+                    {{ p.isFolded ? '已弃牌' : p.evaluatedHand.rankName }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- 底部操作控制台 -->
+          <footer class="action-console glass-panel">
+            <!-- 准备/下一局 -->
+            <div v-if="stage === 'idle' || stage === 'ended'" class="console-actions">
+              <button v-if="stage === 'ended'" class="btn-arcade btn-secondary" @click="showSettleModal = true">
+                <Eye class="w-4 h-4" />
+                <span>查看亮牌复盘</span>
+              </button>
+              <button class="btn-arcade btn-primary btn-start" @click="startNewHand">
+                <Play class="w-5 h-5 fill-current" />
+                <span>发牌开局 ({{ variant === 'shortdeck' ? '短牌 6+' : '标准德州' }})</span>
+              </button>
+            </div>
+
+            <!-- 轮到玩家行动 -->
+            <div v-else-if="activePlayerIndex === 0 && !players[0].isFolded" class="console-actions">
+              <!-- 弃牌 -->
+              <button class="btn-arcade btn-danger" @click="playerFold">
+                <ShieldAlert class="w-4 h-4" />
+                <span>弃牌 (Fold)</span>
+              </button>
+
+              <!-- 过牌 / 跟注 -->
+              <button 
+                class="btn-arcade btn-primary" 
+                @click="playerCheckOrCall"
+              >
+                <Coins class="w-4 h-4" />
+                <span v-if="callNeeded === 0">过牌 (Check)</span>
+                <span v-else>跟注 🪙 {{ callNeeded }}</span>
+              </button>
+
+              <!-- 快捷加注与滑动条控制组 -->
+              <div class="raise-control-cluster">
+                <div class="raise-quick-row">
+                  <button class="btn-quick-chip" @click="setSingleRaiseMultiplier(2)">2BB</button>
+                  <button class="btn-quick-chip" @click="setSingleRaiseMultiplier(3)">3BB</button>
+                  <button class="btn-quick-chip" @click="setSingleRaisePotFraction(0.5)">1/2底池</button>
+                  <button class="btn-quick-chip" @click="setSingleRaisePotFraction(1)">满底池</button>
+                </div>
+                <div class="raise-slider-row">
+                  <input 
+                    type="range" 
+                    v-model.number="singleRaiseAmount" 
+                    :min="minSingleRaiseAmount" 
+                    :max="maxSingleRaiseAmount"
+                    :step="bigBlind"
+                    class="raise-slider"
+                  />
+                  <button 
+                    class="btn-arcade btn-raise" 
+                    @click="playerRaise(singleRaiseAmount - callNeeded)"
+                    :disabled="userStore.coins < singleRaiseAmount"
+                  >
+                    <span>加注至 🪙{{ singleRaiseAmount }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 孤注一掷 All-In -->
+              <button class="btn-arcade btn-allin" @click="playerAllIn">
+                <Flame class="w-4 h-4" />
+                <span>ALL IN 全下</span>
+              </button>
+            </div>
+
+            <!-- AI 思考中 -->
+            <div v-else class="console-actions waiting">
+              <Loader2 class="w-5 h-5 animate-spin text-cyan-400" />
+              <span class="font-arcade text-slate-300">轮到 {{ players[activePlayerIndex]?.name }} 权衡决策中...</span>
+            </div>
+          </footer>
         </div>
-      </div>
 
-      <!-- 底部操作控制台 -->
-      <div class="action-console glass-panel">
-        <!-- 准备/下一局 -->
-        <div v-if="stage === 'idle' || stage === 'ended'" class="console-actions">
-          <button v-if="stage === 'ended'" class="btn-arcade btn-secondary" @click="showSettleModal = true">
-            <Eye class="w-4 h-4" />
-            <span>查看亮牌明细</span>
-          </button>
-          <button class="btn-arcade btn-primary btn-start" @click="startNewHand">
-            <Play class="w-5 h-5 fill-current" />
-            <span>发牌开局 (盲注 {{ smallBlind }}/{{ bigBlind }})</span>
-          </button>
-        </div>
-
-        <!-- 轮到玩家行动 -->
-        <div v-else-if="activePlayerIndex === 0 && !players[0].isFolded" class="console-actions">
-          <!-- 弃牌 -->
-          <button class="btn-arcade btn-danger" @click="playerFold">
-            <ShieldAlert class="w-4 h-4" />
-            <span>弃牌</span>
-          </button>
-
-          <!-- 过牌 / 跟注 -->
-          <button 
-            class="btn-arcade btn-primary" 
-            @click="playerCheckOrCall"
-          >
-            <Coins class="w-4 h-4" />
-            <span v-if="callNeeded === 0">过牌 (Check)</span>
-            <span v-else>跟注 🪙 {{ callNeeded }}</span>
-          </button>
-
-          <!-- 快捷加注栏 -->
-          <div class="raise-cluster">
-            <button 
-              class="btn-arcade btn-raise" 
-              @click="playerRaise(bigBlind * 2)"
-              :disabled="userStore.coins < callNeeded + bigBlind * 2"
-            >
-              +{{ bigBlind * 2 }}
-            </button>
-            <button 
-              class="btn-arcade btn-raise" 
-              @click="playerRaise(Math.max(bigBlind * 2, Math.floor(pot * 0.5)))"
-              :disabled="userStore.coins < callNeeded + Math.max(bigBlind * 2, Math.floor(pot * 0.5))"
-            >
-              1/2 底池
-            </button>
-            <button 
-              class="btn-arcade btn-raise" 
-              @click="playerRaise(Math.max(bigBlind * 2, pot))"
-              :disabled="userStore.coins < callNeeded + Math.max(bigBlind * 2, pot)"
-            >
-              满底池
-            </button>
+        <!-- 右侧常驻牌桌动态与战报面板 (常驻显示) -->
+        <aside class="sidebar-chat-panel glass-panel">
+          <div class="sidebar-header">
+            <div class="header-tab">
+              <MessageSquare class="w-4 h-4 text-cyan-400" />
+              <span class="font-arcade text-xs text-cyan-300">单机练手 · 牌局记录</span>
+            </div>
+            <span class="conn-dot online">● 离线AI</span>
           </div>
 
-          <!-- 孤注一掷 All-In -->
-          <button class="btn-arcade btn-allin" @click="playerAllIn">
-            <Flame class="w-4 h-4" />
-            <span>ALL IN 全下</span>
-          </button>
-        </div>
+          <div class="sidebar-body" ref="singleLogContainer">
+            <div v-for="(l, i) in actionLogs" :key="i" class="log-item">
+              <span class="log-time font-arcade">[{{ l.time }}]</span>
+              <span class="log-text">{{ l.text }}</span>
+            </div>
+          </div>
 
-        <!-- AI 思考中 -->
-        <div v-else class="console-actions waiting">
-          <Loader2 class="w-5 h-5 animate-spin text-cyan-400" />
-          <span class="font-arcade text-slate-300">轮到 {{ players[activePlayerIndex]?.name }} 权衡决策中...</span>
-        </div>
+          <div class="sidebar-footer coach-tip-box">
+            <div class="coach-title font-arcade">🧠 战术提示:</div>
+            <div class="coach-content text-slate-300">
+              <template v-if="variant === 'shortdeck'">
+                短牌同花极为稀有，<b>同花大于葫芦</b>；A-6-7-8-9 算最小顺子。翻牌前两张大牌（如 AK、QQ）全下翻倍概率高！
+              </template>
+              <template v-else>
+                位置即权力：按钮位 (Button) 拥有翻牌后最后表态优势，多利用位置施压偷池！
+              </template>
+            </div>
+          </div>
+        </aside>
       </div>
 
       <!-- 全量亮牌结算与复盘弹窗 -->
@@ -455,11 +530,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { Play, Coins, ShieldAlert, Flame, Loader2, Trophy, Eye, Crown, Users, Bot, UserPlus, UserMinus } from 'lucide-vue-next'
+import { 
+  ChevronLeft, Play, Coins, ShieldAlert, Flame, Loader2, Trophy, 
+  Eye, Crown, Users, Bot, UserPlus, UserMinus, Sparkles, MessageSquare 
+} from 'lucide-vue-next'
 import MultiplayerTexas from './MultiplayerTexas.vue'
-import type { Card, TexasPlayer, TexasStage } from './types'
+import type { Card, TexasPlayer, TexasStage, TexasVariant } from './types'
 import { 
   createDeck, shuffleDeck, evaluateBest5OfCards, compareTexasHands, 
   getRankDisplay, getSuitSymbol, getSuitColor, decideTexasAI,
@@ -475,6 +553,8 @@ import Modal from '@/components/common/Modal.vue'
 const route = useRoute()
 const playMode = ref<'multiplayer' | 'single'>(route.query.mode === 'single' ? 'single' : 'multiplayer')
 const routeRoomId = computed(() => (route.query.room as string) || 'room_beginner')
+
+const variant = ref<TexasVariant>((route.query.variant as TexasVariant) || 'standard')
 
 const userStore = useUserStore()
 const gameStore = useGameStore()
@@ -495,12 +575,31 @@ const winner = ref<TexasPlayer | null>(null)
 const lastEarnedCoins = ref(0)
 const settlementResult = ref<SettlementResult | null>(null)
 
+// 动作日志
+const actionLogs = ref<{ time: string; text: string }[]>([
+  { time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), text: '🎲 欢迎进入单机德扑练手俱乐部' }
+])
+const singleLogContainer = ref<HTMLElement | null>(null)
+
+function logAction(text: string) {
+  actionLogs.value.push({
+    time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+    text
+  })
+  if (actionLogs.value.length > 50) actionLogs.value.shift()
+  nextTick(() => {
+    if (singleLogContainer.value) {
+      singleLogContainer.value.scrollTop = singleLogContainer.value.scrollHeight
+    }
+  })
+}
+
 // 速度倍率与延迟
 const speedMultiplier = ref<1 | 2 | 3>(1)
 const aiDelay = computed(() => {
-  if (speedMultiplier.value === 3) return 200
-  if (speedMultiplier.value === 2) return 500
-  return 900
+  if (speedMultiplier.value === 3) return 180
+  if (speedMultiplier.value === 2) return 450
+  return 850
 })
 
 let aiTimer: number | null = null
@@ -585,6 +684,13 @@ const isHandInProgress = computed(() => {
   return stage.value !== 'idle' && stage.value !== 'ended'
 })
 
+// 切换规则玩法 (标准 vs 短牌)
+function switchVariant(v: TexasVariant) {
+  if (isHandInProgress.value) return
+  variant.value = v
+  logAction(`🔄 切换玩法规则为：${v === 'shortdeck' ? '短牌 6+ (36张)' : '标准德州 (52张)'}`)
+}
+
 // 增加电脑牌手
 function addBot() {
   if (players.value.length >= 6 || isHandInProgress.value) return
@@ -605,12 +711,14 @@ function addBot() {
     personality: candidate.personality,
     position: 'mp'
   })
+  logAction(`➕ 增加了电脑牌手 [${candidate.name} #${nextIdx}]`)
 }
 
 // 减少电脑牌手
 function removeBot() {
   if (players.value.length <= 2 || isHandInProgress.value) return
-  players.value.pop()
+  const removed = players.value.pop()
+  if (removed) logAction(`➖ 移除了电脑牌手 [${removed.name}]`)
 }
 
 // 补充练习筹码
@@ -618,6 +726,7 @@ function refillHumanCoins() {
   userStore.addCoins(2000)
   players.value[0].chips = userStore.coins
   sound.chips()
+  logAction(`💰 领取了 +2000 练习筹码`)
 }
 
 // 获取人格徽章文本
@@ -667,11 +776,22 @@ const callNeeded = computed(() => {
   return Math.max(0, currentHighestBet.value - players.value[0].currentRoundBet)
 })
 
+// 加注滑动条金额
+const minSingleRaiseAmount = computed(() => {
+  return currentHighestBet.value + bigBlind
+})
+
+const maxSingleRaiseAmount = computed(() => {
+  return userStore.coins
+})
+
+const singleRaiseAmount = ref(30)
+
 // 我的实时 7 选 5 手牌预估
 const myEvaluatedHand = computed(() => {
   if (players.value[0].cards.length === 0) return null
   const all = [...players.value[0].cards, ...communityCards.value]
-  return evaluateBest5OfCards(all)
+  return evaluateBest5OfCards(all, variant.value === 'shortdeck')
 })
 
 const stageName = computed(() => {
@@ -704,6 +824,16 @@ watch(() => userStore.coins, (val) => {
   }
 }, { immediate: true })
 
+function setSingleRaiseMultiplier(bbMultiplier: number) {
+  singleRaiseAmount.value = Math.min(maxSingleRaiseAmount.value, bigBlind * bbMultiplier)
+}
+
+function setSingleRaisePotFraction(fraction: number) {
+  const p = pot.value || bigBlind * 2
+  const target = Math.max(minSingleRaiseAmount.value, Math.floor(p * fraction))
+  singleRaiseAmount.value = Math.min(maxSingleRaiseAmount.value, target)
+}
+
 const isCardInBestFive = (card: Card) => {
   if (stage.value !== 'showdown' && stage.value !== 'ended') return false
   if (!winner.value || !winner.value.evaluatedHand) return false
@@ -735,8 +865,9 @@ const startNewHand = () => {
   // 轮转庄家位 D
   dealerIndex.value = (dealerIndex.value + 1) % players.value.length
 
-  // 洗牌
-  deck = shuffleDeck(createDeck())
+  // 洗牌 (根据短牌还是标准德州洗对应牌堆)
+  const isShort = variant.value === 'shortdeck'
+  deck = shuffleDeck(createDeck(isShort))
   cardIndex = 0
 
   // 发底牌
@@ -755,6 +886,7 @@ const startNewHand = () => {
   })
 
   sound.cardDeal()
+  logAction(`✨ --- 新一手牌开始 (${isShort ? '短牌 6+' : '标准德州'}) ---`)
 
   // 扣除小盲与大盲
   let sbIdx: number
@@ -762,12 +894,10 @@ const startNewHand = () => {
   let firstActIdx: number
 
   if (players.value.length === 2) {
-    // 单挑 (Heads Up): 庄家为小盲并先表态，非庄为大盲
     sbIdx = dealerIndex.value
     bbIdx = (dealerIndex.value + 1) % 2
     firstActIdx = sbIdx
   } else {
-    // 多人: SB = D+1, BB = D+2, UTG = D+3
     sbIdx = (dealerIndex.value + 1) % players.value.length
     bbIdx = (dealerIndex.value + 2) % players.value.length
     firstActIdx = (dealerIndex.value + 3) % players.value.length
@@ -780,6 +910,7 @@ const startNewHand = () => {
   players.value[bbIdx].hasActedThisRound = false
 
   currentHighestBet.value = bigBlind
+  singleRaiseAmount.value = bigBlind * 2
   sound.chips()
 
   setTimeout(() => {
@@ -798,6 +929,7 @@ const postBlind = (p: TexasPlayer, amount: number, label: string) => {
   p.totalHandBet = amount
   pot.value += amount
   p.statusText = label
+  logAction(`🪙 [${p.name}] 投入 ${label}`)
 }
 
 // 轮流行动推进
@@ -829,6 +961,7 @@ const runAITurn = (ai: TexasPlayer) => {
     ai.statusText = '过牌'
     ai.hasActedThisRound = true
     sound.click()
+    logAction(`👀 [${ai.name}] 过牌`)
   } else if (action.type === 'call') {
     const cost = Math.min(ai.chips, action.amount)
     ai.chips -= cost
@@ -839,6 +972,7 @@ const runAITurn = (ai: TexasPlayer) => {
     ai.statusText = `跟注 ${cost}`
     ai.hasActedThisRound = true
     sound.chips()
+    logAction(`👌 [${ai.name}] 跟注: 🪙${cost}`)
   } else if (action.type === 'raise') {
     const totalBet = currentHighestBet.value + action.amount
     const needPay = totalBet - ai.currentRoundBet
@@ -860,6 +994,7 @@ const runAITurn = (ai: TexasPlayer) => {
     ai.statusText = ai.isAllIn ? '加注 All-In 🔥' : `加注至 ${ai.currentRoundBet}`
     ai.hasActedThisRound = true
     sound.chips()
+    logAction(`🔥 [${ai.name}] 加注至: 🪙${ai.currentRoundBet}`)
   } else if (action.type === 'allin') {
     const actualPay = ai.chips
     ai.chips = 0
@@ -879,11 +1014,13 @@ const runAITurn = (ai: TexasPlayer) => {
     ai.statusText = 'ALL IN 🔥'
     ai.hasActedThisRound = true
     sound.victory()
+    logAction(`🚀 [${ai.name}] 全下 ALL-IN! 🪙${actualPay}`)
   } else if (action.type === 'fold') {
     ai.isFolded = true
     ai.hasActedThisRound = true
     ai.statusText = '弃牌'
     sound.fold()
+    logAction(`✋ [${ai.name}] 弃牌`)
   }
 
   advanceToNextPlayer()
@@ -898,6 +1035,7 @@ const playerCheckOrCall = () => {
     me.statusText = '过牌'
     me.hasActedThisRound = true
     sound.click()
+    logAction(`👀 [我] 过牌`)
   } else {
     const pay = Math.min(userStore.coins, diff)
     if (!userStore.spendCoins(pay)) {
@@ -912,6 +1050,7 @@ const playerCheckOrCall = () => {
     me.hasActedThisRound = true
     me.statusText = me.isAllIn ? '跟注 All-in 🔥' : `跟注 ${pay}`
     sound.chips()
+    logAction(`👌 [我] 跟注: 🪙${pay}`)
   }
 
   advanceToNextPlayer()
@@ -946,6 +1085,7 @@ const playerRaise = (raiseAmount: number) => {
   me.hasActedThisRound = true
   me.statusText = me.isAllIn ? '加注 All-in 🔥' : `加注至 ${me.currentRoundBet}`
   sound.chips()
+  logAction(`🔥 [我] 加注至: 🪙${me.currentRoundBet}`)
 
   advanceToNextPlayer()
 }
@@ -983,6 +1123,7 @@ const playerAllIn = () => {
   me.hasActedThisRound = true
   me.statusText = 'ALL IN 🔥'
   sound.victory()
+  logAction(`🚀 [我] 孤注一掷 ALL-IN! 🪙${actualBet}`)
 
   advanceToNextPlayer()
 }
@@ -993,6 +1134,7 @@ const playerFold = () => {
   players.value[0].hasActedThisRound = true
   players.value[0].statusText = '弃牌'
   sound.fold()
+  logAction(`✋ [我] 弃牌`)
 
   advanceToNextPlayer()
 }
@@ -1025,7 +1167,6 @@ const advanceToNextPlayer = () => {
   }
 
   if (attempts >= players.value.length) {
-    // 所有存活玩家均已全下
     transitionToNextStage()
   } else {
     runTurn(nextIdx)
@@ -1044,14 +1185,19 @@ const transitionToNextStage = () => {
     stage.value = 'flop'
     communityCards.value.push(deck[cardIndex++], deck[cardIndex++], deck[cardIndex++])
     sound.cardDeal()
+    logAction(`🃏 发出翻牌圈: ${communityCards.value.map(c => getRankDisplay(c.rank) + getSuitSymbol(c.suit)).join(' ')}`)
   } else if (stage.value === 'flop') {
     stage.value = 'turn'
-    communityCards.value.push(deck[cardIndex++])
+    const tc = deck[cardIndex++]
+    communityCards.value.push(tc)
     sound.cardDeal()
+    logAction(`🃏 发出转牌: ${getRankDisplay(tc.rank) + getSuitSymbol(tc.suit)}`)
   } else if (stage.value === 'turn') {
     stage.value = 'river'
-    communityCards.value.push(deck[cardIndex++])
+    const rc = deck[cardIndex++]
+    communityCards.value.push(rc)
     sound.cardDeal()
+    logAction(`🃏 发出河牌: ${getRankDisplay(rc.rank) + getSuitSymbol(rc.suit)}`)
   } else if (stage.value === 'river') {
     stage.value = 'showdown'
     doShowdown()
@@ -1067,7 +1213,6 @@ const transitionToNextStage = () => {
     return
   }
 
-  // 翻牌后由小盲位(或单挑非庄位)顺时针第一个活着的玩家表态
   const firstSeat = players.value.length === 2 
     ? (dealerIndex.value + 1) % 2 
     : (dealerIndex.value + 1) % players.value.length
@@ -1089,10 +1234,11 @@ const transitionToNextStage = () => {
 const doShowdown = () => {
   sound.reveal()
   stage.value = 'showdown'
+  const isShort = variant.value === 'shortdeck'
 
   players.value.forEach((p: TexasPlayer) => {
     if (p.cards.length === 2) {
-      p.evaluatedHand = evaluateBest5OfCards([...p.cards, ...communityCards.value])
+      p.evaluatedHand = evaluateBest5OfCards([...p.cards, ...communityCards.value], isShort)
     }
   })
 
@@ -1114,10 +1260,11 @@ const doShowdown = () => {
 const declareWinner = (winP: TexasPlayer) => {
   stage.value = 'ended'
   winner.value = winP
+  const isShort = variant.value === 'shortdeck'
 
   players.value.forEach((p: TexasPlayer) => {
     if (p.cards.length === 2 && !p.evaluatedHand) {
-      p.evaluatedHand = evaluateBest5OfCards([...p.cards, ...communityCards.value])
+      p.evaluatedHand = evaluateBest5OfCards([...p.cards, ...communityCards.value], isShort)
     }
   })
 
@@ -1154,6 +1301,9 @@ const declareWinner = (winP: TexasPlayer) => {
         achievementStore.unlock('texas_royal')
       }
     }
+    logAction(`🏆 恭喜您赢得整张底池 🪙${humanPayout}！牌型: ${players.value[0].evaluatedHand?.rankName}`)
+  } else {
+    logAction(`🏁 胜出者: [${winP.name}] 牌型: ${winP.evaluatedHand?.rankName}`)
   }
 
   showSettleModal.value = true
@@ -1177,32 +1327,57 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 顶部模式切换 */
+/* 顶部模式切换 HUD */
 .texas-mode-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   padding: 8px 16px;
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.92);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 20;
 }
 
+.hud-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hud-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 12px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.hud-back-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
 .mode-tabs {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .mode-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 18px;
+  gap: 6px;
+  padding: 6px 14px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #94a3b8;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -1212,15 +1387,66 @@ onUnmounted(() => {
   background: rgba(6, 182, 212, 0.15);
   border-color: #06b6d4;
   color: #38bdf8;
-  box-shadow: 0 0 14px rgba(6, 182, 212, 0.3);
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
 }
 
 .live-pill {
-  font-size: 10px;
+  font-size: 9px;
   background: #ef4444;
   color: #fff;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 4px;
+}
+
+.variant-toggle-group {
+  display: flex;
+  gap: 6px;
+}
+
+.variant-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.variant-btn.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.variant-btn.is-short.active {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  color: #fbbf24;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+}
+
+.variant-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 短牌规则条 */
+.short-deck-banner {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.15) 100%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 4px 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
 }
 
 /* 单机人机练习视图 */
@@ -1232,12 +1458,11 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* Bot 管理控制工具栏 */
 .bot-control-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 18px;
+  padding: 5px 16px;
   background: rgba(15, 23, 42, 0.7);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 12px;
@@ -1246,35 +1471,28 @@ onUnmounted(() => {
 .toolbar-section {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.toolbar-title {
-  color: #94a3b8;
-}
+.toolbar-title { color: #94a3b8; font-size: 11px; }
 
-.btn-group {
-  display: flex;
-  gap: 6px;
-}
+.btn-group { display: flex; gap: 4px; }
 
 .toolbar-btn {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 3px 8px;
+  border-radius: 5px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #cbd5e1;
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
 .toolbar-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
 }
 
 .toolbar-btn:disabled {
@@ -1288,18 +1506,15 @@ onUnmounted(() => {
   color: #fbbf24;
 }
 
-.speed-chips {
-  display: flex;
-  gap: 4px;
-}
+.speed-chips { display: flex; gap: 4px; }
 
 .speed-btn {
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #94a3b8;
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
 }
 
@@ -1309,12 +1524,11 @@ onUnmounted(() => {
   border-color: #38bdf8;
 }
 
-/* 顶部状态仪表板 */
 .game-dashboard {
   display: flex;
   justify-content: space-around;
-  padding: 8px 16px;
-  background: rgba(15, 23, 42, 0.8);
+  padding: 6px 16px;
+  background: rgba(15, 23, 42, 0.85);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -1324,40 +1538,48 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.stat-label {
-  font-size: 11px;
-  color: #64748b;
+.stat-label { font-size: 10px; color: #64748b; }
+.stat-value { font-size: 13px; font-weight: bold; }
+
+/* 主竞技场分栏布局 */
+.main-poker-arena {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
 }
 
-.stat-value {
-  font-size: 14px;
-  font-weight: bold;
+.table-play-zone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
-/* 主牌桌包裹层 */
 .texas-table-wrapper {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 12px;
   position: relative;
 }
 
 .texas-felt {
-  width: 920px;
-  height: 510px;
-  border-radius: 255px;
+  width: 880px;
+  height: 480px;
+  border-radius: 240px;
   position: relative;
   box-shadow: 
-    0 30px 60px -10px rgba(0, 0, 0, 0.9),
-    0 0 100px rgba(10, 80, 50, 0.2);
+    0 25px 50px -10px rgba(0, 0, 0, 0.9),
+    0 0 80px rgba(10, 80, 50, 0.2);
 }
 
 .leather-armrest {
   position: absolute;
   inset: 0;
-  border-radius: 255px;
+  border-radius: 240px;
   background: linear-gradient(135deg, #2b1810 0%, #150b07 100%);
   border: 4px solid #3d2112;
   box-shadow: 
@@ -1367,16 +1589,16 @@ onUnmounted(() => {
 
 .brass-bezel {
   position: absolute;
-  inset: 16px;
-  border-radius: 239px;
+  inset: 15px;
+  border-radius: 225px;
   background: linear-gradient(135deg, #d4af37 0%, #aa7c11 50%, #f6e27a 100%);
   box-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
 }
 
 .felt-inner {
   position: absolute;
-  inset: 20px;
-  border-radius: 235px;
+  inset: 19px;
+  border-radius: 221px;
   background: radial-gradient(ellipse at center, #0d5f3a 0%, #083c24 70%, #032114 100%);
   border: 2px solid rgba(0, 0, 0, 0.6);
   box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.8);
@@ -1384,7 +1606,7 @@ onUnmounted(() => {
 
 .felt-watermark {
   position: absolute;
-  top: 40px;
+  top: 36px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1394,10 +1616,9 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.wm-suit { font-size: 20px; color: #d4af37; }
-.wm-text { font-size: 14px; letter-spacing: 4px; color: #d4af37; font-weight: 900; }
+.wm-suit { font-size: 18px; color: #d4af37; }
+.wm-text { font-size: 13px; letter-spacing: 4px; color: #d4af37; font-weight: 900; }
 
-/* 牌桌中央公共牌 */
 .community-board {
   position: absolute;
   top: 50%;
@@ -1406,40 +1627,32 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   z-index: 2;
 }
 
 .pot-display-box {
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(245, 158, 11, 0.4);
-  padding: 4px 22px;
-  border-radius: 20px;
+  padding: 3px 20px;
+  border-radius: 18px;
   display: flex;
   gap: 8px;
   align-items: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
-.pot-tag { font-size: 11px; color: #94a3b8; }
-.pot-amount { font-size: 15px; color: #facc15; font-weight: bold; }
+.pot-tag { font-size: 10px; color: #94a3b8; }
+.pot-amount { font-size: 14px; color: #facc15; font-weight: bold; }
 
-.community-cards-row {
-  display: flex;
-  gap: 10px;
-}
-
-.comm-card-slot {
-  width: 60px;
-  height: 86px;
-}
+.community-cards-row { display: flex; gap: 8px; }
+.comm-card-slot { width: 56px; height: 80px; }
 
 .poker-card {
   width: 100%;
   height: 100%;
   background: #ffffff;
   border-radius: 6px;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.45);
   position: relative;
   display: flex;
   align-items: center;
@@ -1449,14 +1662,14 @@ onUnmounted(() => {
 
 .card-corner {
   position: absolute;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.1;
   text-align: center;
 }
 
-.card-corner.top { top: 4px; left: 5px; }
-.card-corner.bottom { bottom: 4px; right: 5px; transform: rotate(180deg); }
-.card-center-suit { font-size: 22px; }
+.card-corner.top { top: 3px; left: 4px; }
+.card-corner.bottom { bottom: 3px; right: 4px; transform: rotate(180deg); }
+.card-center-suit { font-size: 20px; }
 
 .empty-card-placeholder {
   width: 100%;
@@ -1469,8 +1682,8 @@ onUnmounted(() => {
 }
 
 .placeholder-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
 }
@@ -1480,7 +1693,7 @@ onUnmounted(() => {
   border: 2px solid #facc15 !important;
 }
 
-/* 动态席位坐标 */
+/* 席位分布 */
 .seat {
   position: absolute;
   display: flex;
@@ -1489,30 +1702,30 @@ onUnmounted(() => {
   z-index: 5;
 }
 
-.seat-pos-bottom { bottom: -18px; left: 50%; transform: translateX(-50%); }
-.seat-pos-top { top: -18px; left: 50%; transform: translateX(-50%); }
-.seat-pos-left { top: 50%; left: 30px; transform: translateY(-50%); }
-.seat-pos-right { top: 50%; right: 30px; transform: translateY(-50%); }
-.seat-pos-top-left { top: 45px; left: 50px; }
-.seat-pos-top-right { top: 45px; right: 50px; }
-.seat-pos-bottom-left { bottom: 45px; left: 50px; }
-.seat-pos-bottom-right { bottom: 45px; right: 50px; }
+.seat-pos-bottom { bottom: -16px; left: 50%; transform: translateX(-50%); }
+.seat-pos-top { top: -16px; left: 50%; transform: translateX(-50%); }
+.seat-pos-left { top: 50%; left: 25px; transform: translateY(-50%); }
+.seat-pos-right { top: 50%; right: 25px; transform: translateY(-50%); }
+.seat-pos-top-left { top: 40px; left: 45px; }
+.seat-pos-top-right { top: 40px; right: 45px; }
+.seat-pos-bottom-left { bottom: 40px; left: 45px; }
+.seat-pos-bottom-right { bottom: 40px; right: 45px; }
 
 .seat-head {
   background: rgba(15, 23, 42, 0.92);
   border: 2px solid rgba(255, 255, 255, 0.15);
-  border-radius: 30px;
-  padding: 4px 14px 4px 4px;
+  border-radius: 28px;
+  padding: 3px 12px 3px 3px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  gap: 6px;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.6);
   position: relative;
 }
 
 .seat.is-turn .seat-head {
   border-color: #facc15;
-  box-shadow: 0 0 20px rgba(250, 204, 21, 0.65);
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.65);
 }
 
 .seat.is-folded {
@@ -1521,33 +1734,25 @@ onUnmounted(() => {
 }
 
 .player-avatar {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #1e293b;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 19px;
   border: 2px solid rgba(255, 255, 255, 0.15);
 }
 
-.player-meta {
-  display: flex;
-  flex-direction: column;
-}
+.player-meta { display: flex; flex-direction: column; }
 
-.player-name-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
+.player-name-row { display: flex; align-items: center; gap: 3px; }
 .player-name {
-  font-size: 12px;
+  font-size: 11px;
   color: #f8fafc;
   font-weight: 600;
-  max-width: 75px;
+  max-width: 68px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1557,43 +1762,31 @@ onUnmounted(() => {
   font-size: 9px;
   background: rgba(56, 189, 248, 0.2);
   color: #38bdf8;
-  padding: 1px 4px;
-  border-radius: 4px;
+  padding: 1px 3px;
+  border-radius: 3px;
 }
 
-.player-chips {
-  font-size: 12px;
-  color: #facc15;
-}
+.player-chips { font-size: 11px; color: #facc15; }
 
 .dealer-btn {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 22px;
-  height: 22px;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
   background: radial-gradient(circle, #ef4444 0%, #b91c1c 100%);
   color: #fff;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 2px solid #fff;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.6);
 }
 
-.player-cards {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.small-card {
-  width: 40px;
-  height: 56px;
-}
+.player-cards { display: flex; gap: 3px; margin-top: 3px; }
+.small-card { width: 38px; height: 52px; }
 
 .card-back-pattern {
   width: 100%;
@@ -1606,35 +1799,31 @@ onUnmounted(() => {
   justify-content: center;
 }
 
-.back-inner-diamond {
-  color: rgba(255, 255, 255, 0.25);
-  font-size: 16px;
-}
+.back-inner-diamond { color: rgba(255, 255, 255, 0.25); font-size: 14px; }
 
 .bet-bubble, .status-bubble {
-  margin-top: 4px;
+  margin-top: 3px;
   background: rgba(0, 0, 0, 0.85);
   border: 1px solid #f59e0b;
   color: #fef08a;
-  padding: 2px 10px;
-  border-radius: 12px;
-  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 10px;
 }
 
 .hand-rank-pill {
-  margin-top: 4px;
+  margin-top: 3px;
   background: linear-gradient(135deg, #0284c7, #0369a1);
   color: #fff;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 6px;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 5px;
   font-weight: bold;
 }
 
 .hand-rank-pill.is-winner {
   background: linear-gradient(135deg, #d97706, #b45309);
   color: #fef08a;
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
 }
 
 /* 底部操作控制台 */
@@ -1642,34 +1831,33 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 24px;
+  padding: 10px 20px;
   background: rgba(15, 23, 42, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  min-height: 72px;
+  min-height: 70px;
 }
 
 .console-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .btn-arcade {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 22px;
+  padding: 9px 18px;
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.15s;
   border: none;
-  font-size: 14px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.btn-arcade:active {
-  transform: translateY(2px);
-}
+.btn-arcade:active { transform: translateY(2px); }
 
 .btn-danger {
   background: #dc2626;
@@ -1695,44 +1883,119 @@ onUnmounted(() => {
   animation: pulse-glow 2s infinite;
 }
 
-.raise-cluster {
+.raise-control-cluster {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.raise-quick-row { display: flex; gap: 4px; }
+
+.btn-quick-chip {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.btn-quick-chip:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.raise-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.raise-slider {
+  width: 90px;
+  accent-color: #f59e0b;
+  cursor: pointer;
 }
 
 .btn-raise {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #f1f5f9;
-  padding: 8px 14px;
-  border-radius: 8px;
+  background: #d97706;
+  color: #fff;
+  box-shadow: 0 3px 0 #92400e;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
-.btn-raise:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: #38bdf8;
+/* 右侧常驻日志与AI分析面板 */
+.sidebar-chat-panel {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.95);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 5;
 }
 
-.btn-raise:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* 结算复盘弹窗内部 */
+.header-tab { display: flex; align-items: center; gap: 6px; }
+.conn-dot { font-size: 11px; color: #34d399; }
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.log-time { color: #64748b; margin-right: 4px; font-size: 10px; }
+.log-text { color: #cbd5e1; line-height: 1.3; }
+
+.sidebar-footer.coach-tip-box {
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.coach-title {
+  font-size: 11px;
+  color: #facc15;
+  margin-bottom: 4px;
+}
+
+.coach-content {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* 结算弹窗 */
 .settle-summary-modal {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .winner-banner {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px;
+  padding: 12px;
   background: rgba(245, 158, 11, 0.12);
   border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .winner-banner.is-human-winner {
@@ -1740,57 +2003,31 @@ onUnmounted(() => {
   border-color: rgba(16, 185, 129, 0.4);
 }
 
-.winner-title {
-  font-size: 16px;
-  font-weight: bold;
-  color: #fff;
-}
+.winner-title { font-size: 15px; font-weight: bold; color: #fff; }
+.section-tag { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: block; }
+.settle-comm-row { display: flex; gap: 8px; }
+.settle-mini-card { width: 42px; height: 60px; }
 
-.section-tag {
-  font-size: 11px;
-  color: #94a3b8;
-  margin-bottom: 6px;
-  display: block;
-}
-
-.settle-comm-row {
-  display: flex;
-  gap: 8px;
-}
-
-.settle-mini-card {
-  width: 44px;
-  height: 62px;
-}
-
-.slices-grid {
-  display: flex;
-  gap: 10px;
-}
-
+.slices-grid { display: flex; gap: 8px; }
 .slice-item {
   flex: 1;
   background: rgba(0, 0, 0, 0.35);
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.slice-header {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
+.slice-header { display: flex; justify-content: space-between; font-size: 11px; }
 
 .settle-player-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .settle-player-row.is-winner-row {
@@ -1798,54 +2035,22 @@ onUnmounted(() => {
   border-color: rgba(245, 158, 11, 0.3);
 }
 
-.settle-player-row.is-me-row {
-  border-left: 3px solid #38bdf8;
-}
+.settle-player-row.is-me-row { border-left: 3px solid #38bdf8; }
 
-.settle-p-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 140px;
-}
+.settle-p-info { display: flex; align-items: center; gap: 6px; width: 130px; }
+.settle-p-avatar { font-size: 18px; }
+.settle-p-name { font-size: 12px; color: #fff; font-weight: 600; }
+.settle-p-cards { display: flex; gap: 4px; }
+.settle-p-hand { display: flex; flex-direction: column; align-items: flex-end; }
+.hand-badge { font-size: 10px; color: #94a3b8; }
+.hand-badge.highlight { color: #facc15; font-weight: bold; }
+.win-coins { color: #34d399; font-weight: bold; font-size: 11px; }
+.loss-coins { color: #f87171; font-size: 11px; }
 
-.settle-p-avatar {
-  font-size: 20px;
-}
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: 8px; }
 
-.settle-p-name {
-  font-size: 13px;
-  color: #fff;
-  font-weight: 600;
-}
-
-.settle-p-cards {
-  display: flex;
-  gap: 6px;
-}
-
-.settle-p-hand {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.hand-badge {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.hand-badge.highlight {
-  color: #facc15;
-  font-weight: bold;
-}
-
-.win-coins { color: #34d399; font-weight: bold; }
-.loss-coins { color: #f87171; }
-
-.modal-footer-btns {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 4px 0 #9f1239, 0 0 15px rgba(244, 63, 94, 0.4); }
+  50% { box-shadow: 0 4px 0 #9f1239, 0 0 25px rgba(244, 63, 94, 0.8); }
 }
 </style>

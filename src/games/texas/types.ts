@@ -1,4 +1,5 @@
 export type Suit = 'spade' | 'heart' | 'club' | 'diamond'
+export type TexasVariant = 'standard' | 'shortdeck'
 
 export interface Card {
   suit: Suit

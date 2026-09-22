@@ -50,13 +50,16 @@ class TexasRoom {
   public turnTimeoutTimer: any = null
   public readonly TURN_TIME_LIMIT = 15
   public logMessages: { id: string; time: string; text: string; sender?: string }[] = []
+  public isShortDeck: boolean = false
 
-  constructor(id: string, name: string, sb: number, bb: number) {
+  constructor(id: string, name: string, sb: number, bb: number, isShortDeck = false) {
     this.id = id
     this.name = name
     this.smallBlind = sb
     this.bigBlind = bb
-    this.addLog(`🎲 房间 [${name}] 已就绪，盲注: ${sb}/${bb}`)
+    this.isShortDeck = isShortDeck
+    const deckType = isShortDeck ? '【短牌6+ (36张)】' : '【标准德州 (52张)】'
+    this.addLog(`🎲 房间 [${name}] 已就绪，规则: ${deckType}，盲注: ${sb}/${bb}`)
   }
 
   public addLog(text: string, sender?: string) {
@@ -196,7 +199,7 @@ class TexasRoom {
 
     clearTimeout(this.turnTimeoutTimer)
     this.stage = 'preflop'
-    this.deck = shuffleDeck(createDeck())
+    this.deck = shuffleDeck(createDeck(this.isShortDeck))
     this.communityCards = []
     this.pot = 0
     this.currentHighestBet = 0
@@ -389,7 +392,7 @@ class TexasRoom {
   private handleShowdown() {
     const contenders = this.seats.filter(s => s && !s.isFolded) as PlayerSeat[]
     contenders.forEach(p => {
-      p.evaluatedHand = evaluateBest5OfCards([...p.cards, ...this.communityCards])
+      p.evaluatedHand = evaluateBest5OfCards([...p.cards, ...this.communityCards], this.isShortDeck)
     })
 
     // 按牌型分值降序排列
@@ -506,6 +509,7 @@ class TexasRoom {
         activeSeatIndex: this.activeSeatIndex,
         dealerSeatIndex: this.dealerSeatIndex,
         turnTimeLimit: this.TURN_TIME_LIMIT,
+        isShortDeck: this.isShortDeck,
         seats: this.getMaskedSeats(ws, isShowdown),
         logs: this.logMessages.slice(-20)
       }
@@ -542,11 +546,13 @@ class TexasRoom {
   }
 }
 
-// 房间管理器
+// 房间管理器 (标准德州 + 短牌 6+ 德扑)
 const rooms = new Map<string, TexasRoom>()
-rooms.set('room_beginner', new TexasRoom('room_beginner', '澳门微额欢乐桌 🟢', 10, 20))
-rooms.set('room_pro', new TexasRoom('room_pro', '拉斯维加斯经典桌 🟡', 50, 100))
-rooms.set('room_master', new TexasRoom('room_master', '蒙特卡洛巅峰豪客桌 🔴', 200, 400))
+rooms.set('room_beginner', new TexasRoom('room_beginner', '标准·微额欢乐桌 🟢', 10, 20, false))
+rooms.set('room_pro', new TexasRoom('room_pro', '标准·进阶竞技桌 🟡', 50, 100, false))
+rooms.set('room_master', new TexasRoom('room_master', '标准·豪客巅峰桌 🔴', 200, 400, false))
+rooms.set('room_short_1', new TexasRoom('room_short_1', '短牌6+·热血微额桌 ⚡', 10, 20, true))
+rooms.set('room_short_pro', new TexasRoom('room_short_pro', '短牌6+·狂暴巅峰桌 🔥', 50, 100, true))
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -568,8 +574,9 @@ wss.on('connection', (ws: WebSocket, req) => {
   if (!room) {
     const sb = Number(url.searchParams.get('sb') || 10)
     const bb = Number(url.searchParams.get('bb') || 20)
-    const name = url.searchParams.get('name') ? decodeURIComponent(url.searchParams.get('name')!) : `私人包厢 #${roomId.slice(-4)}`
-    room = new TexasRoom(roomId, name, sb, bb)
+    const isShort = url.searchParams.get('short') === '1' || roomId.includes('short')
+    const name = url.searchParams.get('name') ? decodeURIComponent(url.searchParams.get('name')!) : (isShort ? `短牌包厢 #${roomId.slice(-4)}` : `私人包厢 #${roomId.slice(-4)}`)
+    room = new TexasRoom(roomId, name, sb, bb, isShort)
     rooms.set(roomId, room)
   }
   room.handleConnection(ws, url.searchParams)

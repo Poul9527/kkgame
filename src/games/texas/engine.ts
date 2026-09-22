@@ -1,12 +1,14 @@
 import type { Card, Suit, TexasHandRank, EvaluatedTexasHand, TexasPlayer } from './types'
 
 const SUITS: Suit[] = ['spade', 'heart', 'club', 'diamond']
-const RANKS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+const STANDARD_RANKS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+const SHORT_DECK_RANKS = [6, 7, 8, 9, 10, 11, 12, 13, 14]
 
-export function createDeck(): Card[] {
+export function createDeck(isShortDeck = false): Card[] {
+  const ranks = isShortDeck ? SHORT_DECK_RANKS : STANDARD_RANKS
   const deck: Card[] = []
   for (const suit of SUITS) {
-    for (const rank of RANKS) {
+    for (const rank of ranks) {
       deck.push({
         suit,
         rank,
@@ -62,13 +64,13 @@ function getCombinations<T>(arr: T[], k: number): T[][] {
   return combinations
 }
 
-// 评定精准的 5 张牌牌型
-function evaluate5Cards(cards: Card[]): EvaluatedTexasHand {
+// 评定精准的 5 张牌牌型 (支持标准德州与短牌 6+)
+function evaluate5Cards(cards: Card[], isShortDeck = false): EvaluatedTexasHand {
   const sorted = [...cards].sort((a, b) => b.rank - a.rank)
   const ranks = sorted.map(c => c.rank)
   const isFlush = sorted.every(c => c.suit === sorted[0].suit)
 
-  // 顺子检测 (支持普通顺与 A-2-3-4-5 轮转小顺)
+  // 顺子检测 (支持普通顺，标准 A-2-3-4-5，短牌 A-6-7-8-9)
   let isNormalStraight = true
   for (let i = 0; i < 4; i++) {
     if (ranks[i] - ranks[i + 1] !== 1) {
@@ -76,9 +78,10 @@ function evaluate5Cards(cards: Card[]): EvaluatedTexasHand {
       break
     }
   }
-  const isA2345 = ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2
-  const isStraight = isNormalStraight || isA2345
-  const straightHigh = isA2345 ? 5 : ranks[0]
+  const isA2345 = !isShortDeck && ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2
+  const isA6789 = isShortDeck && ranks[0] === 14 && ranks[1] === 9 && ranks[2] === 8 && ranks[3] === 7 && ranks[4] === 6
+  const isStraight = isNormalStraight || isA2345 || isA6789
+  const straightHigh = isA6789 ? 9 : (isA2345 ? 5 : ranks[0])
 
   // 统计同点数数量
   const counts: Record<number, number> = {}
@@ -121,36 +124,64 @@ function evaluate5Cards(cards: Card[]): EvaluatedTexasHand {
     }
   }
 
-  // 4. 葫芦 (Full House, 3带2)
-  if (countEntries[0].count === 3 && countEntries[1].count === 2) {
-    const trip = countEntries[0].rank
-    const pair = countEntries[1].rank
-    return {
-      rank: 'full_house',
-      rankName: `葫芦 (${getRankDisplay(trip)}满${getRankDisplay(pair)}) 🏰`,
-      score: 6000000 + trip * 100 + pair,
-      bestFive: sorted,
-      tieBreakers: [trip, pair]
+  // 短牌短牌核心规则：同花 > 葫芦
+  if (isShortDeck) {
+    // 4. 短牌同花 (Flush)
+    if (isFlush) {
+      const score = 6500000 + ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4]
+      return {
+        rank: 'flush',
+        rankName: `同花 (${getRankDisplay(ranks[0])}高) 🌺`,
+        score,
+        bestFive: sorted,
+        tieBreakers: ranks
+      }
     }
-  }
 
-  // 5. 同花 (Flush)
-  if (isFlush) {
-    const score = 5000000 + ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4]
-    return {
-      rank: 'flush',
-      rankName: `同花 (${getRankDisplay(ranks[0])}高) 🌺`,
-      score,
-      bestFive: sorted,
-      tieBreakers: ranks
+    // 5. 葫芦 (Full House, 3带2)
+    if (countEntries[0].count === 3 && countEntries[1].count === 2) {
+      const trip = countEntries[0].rank
+      const pair = countEntries[1].rank
+      return {
+        rank: 'full_house',
+        rankName: `葫芦 (${getRankDisplay(trip)}满${getRankDisplay(pair)}) 🏰`,
+        score: 5500000 + trip * 100 + pair,
+        bestFive: sorted,
+        tieBreakers: [trip, pair]
+      }
+    }
+  } else {
+    // 标准德州规则：葫芦 > 同花
+    if (countEntries[0].count === 3 && countEntries[1].count === 2) {
+      const trip = countEntries[0].rank
+      const pair = countEntries[1].rank
+      return {
+        rank: 'full_house',
+        rankName: `葫芦 (${getRankDisplay(trip)}满${getRankDisplay(pair)}) 🏰`,
+        score: 6000000 + trip * 100 + pair,
+        bestFive: sorted,
+        tieBreakers: [trip, pair]
+      }
+    }
+
+    if (isFlush) {
+      const score = 5000000 + ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4]
+      return {
+        rank: 'flush',
+        rankName: `同花 (${getRankDisplay(ranks[0])}高) 🌺`,
+        score,
+        bestFive: sorted,
+        tieBreakers: ranks
+      }
     }
   }
 
   // 6. 顺子 (Straight)
   if (isStraight) {
+    const wheelNote = isA6789 ? ' (A-6-7-8-9)' : (isA2345 ? ' (A-2-3-4-5)' : '')
     return {
       rank: 'straight',
-      rankName: `顺子 (${getRankDisplay(straightHigh)}高) ⚡`,
+      rankName: `顺子 (${getRankDisplay(straightHigh)}高)${wheelNote} ⚡`,
       score: 4000000 + straightHigh,
       bestFive: sorted,
       tieBreakers: [straightHigh]
@@ -211,8 +242,8 @@ function evaluate5Cards(cards: Card[]): EvaluatedTexasHand {
   }
 }
 
-// 核心：从 5 到 7 张牌中选出最强的 5 张 (7 选 5 最佳组合)
-export function evaluateBest5OfCards(allCards: Card[]): EvaluatedTexasHand {
+// 核心：从 5 到 7 张牌中选出最强的 5 张 (7 选 5 最佳组合，支持短牌 6+)
+export function evaluateBest5OfCards(allCards: Card[], isShortDeck = false): EvaluatedTexasHand {
   if (allCards.length < 5) {
     // 牌少于 5 张时的手牌简单预估
     const sorted = [...allCards].sort((a, b) => b.rank - a.rank)
@@ -236,10 +267,10 @@ export function evaluateBest5OfCards(allCards: Card[]): EvaluatedTexasHand {
 
   // 生成所有的 5 张牌组合 (最多 21 种)
   const combos = getCombinations(allCards, 5)
-  let bestResult = evaluate5Cards(combos[0])
+  let bestResult = evaluate5Cards(combos[0], isShortDeck)
 
   for (let i = 1; i < combos.length; i++) {
-    const current = evaluate5Cards(combos[i])
+    const current = evaluate5Cards(combos[i], isShortDeck)
     if (current.score > bestResult.score) {
       bestResult = current
     }

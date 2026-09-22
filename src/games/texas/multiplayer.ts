@@ -28,6 +28,7 @@ export interface TexasRoomSnapshot {
   activeSeatIndex: number
   dealerSeatIndex: number
   turnTimeLimit: number
+  isShortDeck?: boolean
   seats: (RemoteSeat | null)[]
   logs: { time: string; text: string; sender?: string }[]
 }

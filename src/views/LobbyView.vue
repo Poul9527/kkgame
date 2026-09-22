@@ -140,7 +140,7 @@
           </div>
 
           <div class="table-card-footer">
-            <button class="btn-enter-table font-arcade" @click="enterTable(table.id, table.isSolo)">
+            <button class="btn-enter-table font-arcade" @click="enterTable(table.id, table.isSolo, table.isShort)">
               <span>{{ table.btnText }}</span>
               <ChevronRight class="w-4 h-4" />
             </button>
@@ -409,8 +409,27 @@ const pokerTables = [
     ]
   },
   {
+    id: 'room_short_1',
+    name: '短牌6+·热血微额桌 ⚡',
+    typeText: '短牌36张规则',
+    statusText: '短牌爆款',
+    statusClass: 'status-hot',
+    themeClass: 'theme-gold',
+    sb: 10,
+    bb: 20,
+    minBuyIn: 400,
+    maxBuyIn: 2000,
+    playersCount: 2,
+    btnText: '体验短牌',
+    isSolo: false,
+    seatedAvatars: [
+      { name: '短牌战神', avatar: '⚡' },
+      { name: '快打旋风', avatar: '🌪️' }
+    ]
+  },
+  {
     id: 'solo_ai',
-    name: '单人大师AI演练场 🤖',
+    name: '单人大师AI演练场 (标准) 🤖',
     typeText: '单机练功房',
     statusText: '离线秒开',
     statusClass: 'status-solo',
@@ -420,10 +439,30 @@ const pokerTables = [
     minBuyIn: 200,
     maxBuyIn: 2000,
     playersCount: 1,
-    btnText: '即刻练手',
+    btnText: '标准练手',
     isSolo: true,
+    isShort: false,
     seatedAvatars: [
       { name: 'AI大师', avatar: '🧠' }
+    ]
+  },
+  {
+    id: 'solo_short',
+    name: '单人短牌6+ 练功房 ⚡',
+    typeText: '短牌单机版',
+    statusText: '同花>葫芦',
+    statusClass: 'status-active',
+    themeClass: 'theme-gold',
+    sb: 5,
+    bb: 10,
+    minBuyIn: 200,
+    maxBuyIn: 2000,
+    playersCount: 1,
+    btnText: '短牌练手',
+    isSolo: true,
+    isShort: true,
+    seatedAvatars: [
+      { name: '短牌大师', avatar: '🦈' }
     ]
   }
 ]
@@ -439,15 +478,15 @@ const leaderboard = [
 // 牌型列表
 const pokerRanksList = [
   { tier: 'No.1', name: '皇家同花顺 (Royal Flush)', example: '♠A ♠K ♠Q ♠J ♠10', desc: '扑克之王！同花色的 A-K-Q-J-10，无坚不摧。' },
-  { tier: 'No.2', name: '同花顺 (Straight Flush)', example: '♥9 ♥8 ♥7 ♥6 ♥5', desc: '同一花色的五张连续数字牌。' },
+  { tier: 'No.2', name: '同花顺 (Straight Flush)', example: '♥9 ♥8 ♥7 ♥6 ♥5', desc: '同一花色的五张连续数字牌。短牌中 A-6-7-8-9 算同花顺！' },
   { tier: 'No.3', name: '四条 / 金刚 (Four of a Kind)', example: '♣8 ♠8 ♥8 ♦8 ♠K', desc: '四张相同点数的牌，外加一张任意杂牌。' },
-  { tier: 'No.4', name: '葫芦 / 满堂红 (Full House)', example: '♠Q ♥Q ♦Q ♠7 ♥7', desc: '三张同点数牌 + 一对。' },
-  { tier: 'No.5', name: '同花 (Flush)', example: '♦A ♦J ♦9 ♦6 ♦3', desc: '同一花色的任意五张非连续牌。' },
-  { tier: 'No.6', name: '顺子 (Straight)', example: '♠8 ♥7 ♦6 ♣5 ♠4', desc: '五张连续点数但不全同花色的牌。' },
-  { tier: 'No.7', name: '三条 (Three of a Kind)', example: '♣J ♠J ♦J ♠9 ♣4', desc: '三张相同点数的牌。' },
-  { tier: 'No.8', name: '两对 (Two Pair)', example: '♠K ♥K ♣9 ♦9 ♠3', desc: '两组不同点数的对子。' },
-  { tier: 'No.9', name: '一对 (One Pair)', example: '♥A ♦A ♠J ♣8 ♦4', desc: '两张相同点数的牌。' },
-  { tier: 'No.10', name: '高牌 (High Card)', example: '♠A ♣K ♦8 ♥5 ♠2', desc: '未能组成以上任何牌型时，以单张最大牌决胜。' }
+  { tier: 'No.4', name: '短牌同花 (Short Deck Flush)', example: '♦A ♦J ♦9 ♦7 ♦6', desc: '【短牌特则】短牌无2~5，同花仅有9张，极难成牌，故短牌中同花大于葫芦！' },
+  { tier: 'No.5', name: '葫芦 / 满堂红 (Full House)', example: '♠Q ♥Q ♦Q ♠7 ♥7', desc: '三张同点数牌 + 一对。' },
+  { tier: 'No.6', name: '同花 (Standard Flush)', example: '♦A ♦J ♦9 ♦6 ♦3', desc: '标准德州中同一花色的任意五张非连续牌。' },
+  { tier: 'No.7', name: '顺子 (Straight)', example: '♠8 ♥7 ♦6 ♣5 ♠4', desc: '五张连续点数牌。短牌中 A-6-7-8-9 为最小顺子！' },
+  { tier: 'No.8', name: '三条 (Three of a Kind)', example: '♣J ♠J ♦J ♠9 ♣4', desc: '三张相同点数的牌。' },
+  { tier: 'No.9', name: '两对 (Two Pair)', example: '♠K ♥K ♣9 ♦9 ♠3', desc: '两组不同点数的对子。' },
+  { tier: 'No.10', name: '一对 (One Pair)', example: '♥A ♦A ♠J ♣8 ♦4', desc: '两张相同点数的牌。' }
 ]
 
 function quickJoin(roomId: string) {
@@ -455,10 +494,10 @@ function quickJoin(roomId: string) {
   router.push(`/game/texas?room=${roomId}`)
 }
 
-function enterTable(tableId: string, isSolo: boolean) {
+function enterTable(tableId: string, isSolo: boolean, isShort = false) {
   sound.click()
   if (isSolo) {
-    router.push('/game/texas?mode=single')
+    router.push(`/game/texas?mode=single${isShort ? '&variant=shortdeck' : ''}`)
   } else {
     router.push(`/game/texas?room=${tableId}&mode=multiplayer`)
   }
