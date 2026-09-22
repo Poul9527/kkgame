@@ -168,6 +168,7 @@
                     </div>
                     <div class="seat-meta">
                       <div class="seat-name">
+                        <span v-if="roomState?.hostUserId === seat.userId" class="host-badge" title="房主">👑</span>
                         {{ seat.nickname }}
                         <span v-if="seat.userId === authStore.currentUser?.id" class="me-tag">(我)</span>
                       </div>
@@ -220,15 +221,15 @@
                   </div>
                 </template>
 
-                <!-- 席位为空：显示坐下按钮 -->
+                <!-- 席位为空：显示坐下或换座按钮 -->
                 <template v-else>
                   <button 
                     class="sit-down-btn font-arcade" 
                     @click="handleSitClick(idx)"
-                    :disabled="!!multiplayer.mySeat.value"
+                    :title="multiplayer.mySeat.value ? '点击切换到该座位' : '入座该座位'"
                   >
                     <Plus class="w-4 h-4" />
-                    <span>坐下</span>
+                    <span>{{ multiplayer.mySeat.value ? '换座' : '坐下' }}</span>
                   </button>
                 </template>
               </div>
@@ -299,7 +300,21 @@
             </button>
           </div>
 
-          <!-- 场景 C：已坐下但未轮到我 -->
+          <!-- 场景 C：已坐下，处于等待或结束准备阶段 -->
+          <div v-else-if="roomState?.stage === 'idle' || roomState?.stage === 'ended'" class="console-waiting">
+            <template v-if="roomState?.hostUserId === authStore.currentUser?.id && seatedCount >= 2">
+              <span class="text-amber-300 font-arcade text-sm">👑 您是房主，当前已有 {{ seatedCount }} 人入座</span>
+              <button class="btn-arcade btn-primary btn-host-start" @click="multiplayer.startGame()">
+                <Sparkles class="w-4 h-4" />
+                <span>立即发牌开局</span>
+              </button>
+            </template>
+            <span v-else class="text-slate-300 font-arcade">
+              {{ seatedCount >= 2 ? '牌局准备中，即将发牌...' : '等待更多牌友入座 (满2人自动开局)...' }}
+            </span>
+          </div>
+
+          <!-- 场景 D：已坐下但未轮到我 -->
           <div v-else class="console-waiting">
             <Loader2 class="w-5 h-5 animate-spin text-cyan-400" />
             <span class="text-slate-300 font-arcade">
@@ -1064,6 +1079,25 @@ onUnmounted(() => {
   padding: 1px 6px;
   border-radius: 5px;
   font-weight: bold;
+}
+
+.host-badge {
+  font-size: 13px;
+  margin-right: 2px;
+  filter: drop-shadow(0 0 4px #fbbf24);
+}
+
+.btn-host-start {
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  border: 1px solid #fef08a !important;
+  color: #1e1b4b !important;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+}
+
+.btn-host-start:hover {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.7);
 }
 
 .sit-down-btn {

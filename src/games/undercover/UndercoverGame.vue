@@ -1,559 +1,452 @@
 <template>
   <div class="undercover-container">
-    <!-- 顶部 HUD 状态栏 -->
+    <!-- 顶部 HUD 栏 -->
     <header class="hud-bar glass-panel">
       <div class="hud-left">
-        <span class="game-tag font-arcade">🕵️ 谁是卧底 UNDERCOVER</span>
-        <div class="stage-pill font-arcade">
-          <span class="dot animate-pulse"></span>
-          <span>{{ currentStageName }}</span>
+        <span class="game-tag font-arcade">🕵️ 谁是卧底 · 真人暗号对决</span>
+
+        <!-- 房间切换器 -->
+        <div class="room-selector">
+          <button 
+            v-for="r in presetRooms" 
+            :key="r.id"
+            class="room-chip"
+            :class="{ active: currentRoomId === r.id }"
+            @click="switchRoom(r.id)"
+          >
+            {{ r.name }}
+          </button>
+          <button class="room-chip btn-create-chip" @click="showCreateModal = true">
+            <Plus class="w-3.5 h-3.5" />
+            <span>自建包厢</span>
+          </button>
         </div>
       </div>
 
-      <div class="hud-center stats-row font-arcade">
-        <div class="stat-badge">
-          <span class="lbl">回合轮次</span>
-          <span class="val text-amber-400">第 {{ roundNumber }} 轮</span>
+      <div class="hud-center">
+        <!-- 阶段状态信息 -->
+        <div v-if="roomState?.stage === 'revealing'" class="stage-pill font-arcade revealing">
+          <Eye class="w-4 h-4 text-cyan-400" />
+          <span>暗号已生成，请点击牌桌中央查看您的专属词汇！</span>
         </div>
-        <div class="stat-badge">
-          <span class="lbl">场上存活</span>
-          <span class="val text-cyan-400">{{ alivePlayersCount }} / {{ players.length }} 人</span>
+        <div v-else-if="roomState?.stage === 'speaking'" class="stage-pill font-arcade speaking">
+          <Volume2 class="w-4 h-4 animate-pulse text-amber-400" />
+          <span>第 {{ roomState.round }} 轮描述：请 [{{ roomState.speakerNickname }}] 发言 ({{ roomState.turnTimeLeft }}s)</span>
         </div>
-        <div class="stat-badge">
-          <span class="lbl">卧底人数</span>
-          <span class="val text-rose-400 font-bold">{{ undercoverCount }} 人</span>
+        <div v-else-if="roomState?.stage === 'voting'" class="stage-pill font-arcade voting">
+          <ShieldAlert class="w-4 h-4 text-rose-400 animate-bounce" />
+          <span>全员发言完毕！请点击目标头像投票淘汰卧底！({{ roomState.turnTimeLeft }}s)</span>
+        </div>
+        <div v-else-if="roomState?.stage === 'spy_guess'" class="stage-pill font-arcade spy-guess">
+          <Flame class="w-4 h-4 text-amber-400 animate-spin" />
+          <span>卧底绝地反猜环节！({{ roomState.turnTimeLeft }}s)</span>
+        </div>
+        <div v-else-if="roomState?.stage === 'ended'" class="stage-pill font-arcade ended">
+          <Trophy class="w-4 h-4 text-amber-400" />
+          <span>{{ roomState.winnerSide === 'undercover' ? '👿 卧底阵营获胜！' : '🎉 平民阵营获胜！' }}</span>
+        </div>
+        <div v-else class="stage-pill font-arcade waiting">
+          <span>⏳ 等待玩家入座 (满3人房主可发车，推荐4~6人)</span>
         </div>
       </div>
 
       <div class="hud-right">
-        <button class="btn-hud" @click="resetGame" title="重新开局">
-          <RotateCcw class="w-4 h-4 text-cyan-400" />
-          <span>新对局</span>
+        <!-- 房主开局按钮 -->
+        <button 
+          v-if="multiplayer.isHost.value && (roomState?.stage === 'waiting' || roomState?.stage === 'ended')"
+          class="btn-host-action font-arcade"
+          @click="handleStartGame"
+          :disabled="seatedCount < 3"
+        >
+          <Sparkles class="w-4 h-4" />
+          <span>{{ seatedCount >= 3 ? '👑 房主开启暗号对决' : '👑 至少需3人入座' }}</span>
+        </button>
+
+        <button class="btn-tool" @click="handleCopyInvite" title="复制房间邀请">
+          <Share2 class="w-4 h-4 text-cyan-400" />
+          <span>{{ copySuccess ? '已复制！' : '邀请' }}</span>
         </button>
       </div>
     </header>
 
-    <!-- 主竞技场：左侧为圆桌席位舞台，右侧为常驻发言记录与推理公投 -->
+    <!-- 主圆桌舞台：左侧圆桌席位与暗号卡，右侧常驻发言/战报聊天 -->
     <div class="main-arena">
-      <!-- 席位圆桌区域 -->
-      <div class="round-table-zone">
-        <div class="table-card glass-panel">
-          <!-- 圆桌中央：暗号底牌/状态提示 -->
-          <div class="table-center-hub">
-            <transition name="flip" mode="out-in">
-              <!-- 查看我的底牌暗号 -->
-              <div 
-                v-if="gameStage === 'ready' || gameStage === 'describe'"
-                class="secret-word-card glass-panel"
-                :class="{ revealed: isCardRevealed }"
-                @click="isCardRevealed = !isCardRevealed"
-              >
-                <div class="card-inner">
-                  <div class="card-front">
-                    <Eye class="w-6 h-6 text-cyan-400 mb-1" />
-                    <span class="tap-hint">点击翻看我的暗号词</span>
+      <div class="table-workspace">
+        <!-- 圆桌核心 -->
+        <div class="poker-round-table glass-panel">
+          <!-- 6 个在席真人玩家展示 (支持随时点击空座换座！) -->
+          <div class="seats-ring">
+            <div 
+              v-for="(seat, idx) in seatsDisplay" 
+              :key="idx" 
+              class="round-seat"
+              :class="[
+                `pos-${idx}`,
+                {
+                  'is-empty': !seat,
+                  'is-me': seat && seat.userId === authStore.currentUser?.id,
+                  'is-speaking': roomState?.stage === 'speaking' && roomState?.activeSpeakerIndex === idx,
+                  'is-dead': seat && !seat.isAlive,
+                  'has-voted': seat?.votedTargetIndex !== null && seat?.votedTargetIndex !== undefined
+                }
+              ]"
+            >
+              <!-- 席位有人 -->
+              <template v-if="seat">
+                <!-- 投票得票数指示 -->
+                <div v-if="roomState?.stage === 'voting' && seat.receivedVotes > 0" class="vote-count-pill font-arcade">
+                  🗳️ {{ seat.receivedVotes }} 票
+                </div>
+
+                <div class="seat-avatar-wrap">
+                  <span class="seat-avatar">{{ seat.isAlive ? seat.avatar : '☠️' }}</span>
+                  <span v-if="roomState?.hostUserId === seat.userId" class="host-crown" title="房主">👑</span>
+                  <span v-if="roomState?.stage === 'speaking' && roomState?.activeSpeakerIndex === idx" class="speaking-mic">🎙️</span>
+                </div>
+
+                <div class="seat-meta">
+                  <div class="seat-name">
+                    {{ seat.nickname }}
+                    <span v-if="seat.userId === authStore.currentUser?.id" class="me-tag">(我)</span>
                   </div>
-                  <div class="card-back font-arcade">
-                    <span class="secret-word-label">我的暗号词</span>
-                    <span class="secret-word-val text-amber-300 font-bold">
-                      {{ humanPlayer?.role === 'whiteboard' ? '【你是白板！无词】' : humanPlayer?.word }}
-                    </span>
-                    <span class="secret-role-text text-xs text-slate-400">
-                      身份：{{ humanPlayer?.role === 'undercover' ? '🕵️ 卧底' : (humanPlayer?.role === 'whiteboard' ? '⚪ 白板' : '👥 平民') }}
-                    </span>
+                  <div class="seat-status font-arcade">
+                    <span v-if="!seat.isAlive" class="text-rose-400 font-bold">已出局</span>
+                    <span v-else-if="roomState?.stage === 'speaking' && roomState?.activeSpeakerIndex === idx" class="text-amber-300 animate-pulse">发言中...</span>
+                    <span v-else-if="seat.lastSpeech" class="text-cyan-300 font-bold">已发言</span>
+                    <span v-else class="text-slate-400">存活</span>
                   </div>
                 </div>
-              </div>
 
-              <!-- 投票或结算提示 -->
-              <div v-else class="center-status-box font-arcade">
-                <div class="status-icon">🗳️</div>
-                <h4 class="text-amber-400 font-bold">公投放逐阶段</h4>
-                <p class="text-xs text-slate-400">请根据各家发言，选出你心目中的潜伏卧底！</p>
-              </div>
-            </transition>
+                <!-- 玩家最新一句发言气泡 -->
+                <div v-if="seat.lastSpeech && seat.isAlive" class="speech-bubble">
+                  “{{ seat.lastSpeech }}”
+                </div>
+
+                <!-- 投票按钮 (投票阶段可见) -->
+                <div v-if="canVoteFor(seat, idx)" class="vote-action-wrap">
+                  <button class="btn-vote-target font-arcade" @click="handleVoteClick(idx)">
+                    <span>指认 TA</span>
+                  </button>
+                </div>
+              </template>
+
+              <!-- 席位为空：点击直接坐下或换座 -->
+              <template v-else>
+                <button 
+                  class="btn-switch-seat font-arcade" 
+                  @click="handleSeatClick(idx)"
+                  :title="multiplayer.mySeat.value ? '点击切换到该座位' : '入座该席位'"
+                >
+                  <Plus class="w-3.5 h-3.5" />
+                  <span>{{ multiplayer.mySeat.value ? '换座' : '坐下' }}</span>
+                </button>
+              </template>
+            </div>
           </div>
 
-          <!-- 环形 6 位玩家席位排布 -->
-          <div 
-            v-for="(p, idx) in players" 
-            :key="p.id"
-            class="table-seat"
-            :class="[
-              `seat-pos-${idx}`,
-              { 'is-active': activeSpeakerIndex === idx && gameStage === 'describe' },
-              { 'is-eliminated': !p.isAlive },
-              { 'is-human': p.isHuman },
-              { 'is-selected-vote': selectedVoteId === p.id }
-            ]"
-            @click="handleVoteClick(p)"
-          >
-            <!-- 席位状态卡片 -->
-            <div class="seat-badge">
-              <div class="avatar-ring">
-                <span class="avatar-emoji">{{ p.avatar }}</span>
-                <span v-if="!p.isAlive" class="dead-tag">淘汰</span>
-              </div>
-              <div class="seat-info">
-                <div class="seat-name">
-                  {{ p.name }}
-                  <span v-if="p.isHuman" class="me-tag">(我)</span>
+          <!-- 圆桌正中央：我的专属暗号卡片 / 卧底反猜区 / 阶段信息 -->
+          <div class="table-center-hub">
+            <!-- 阶段 A：查看我的暗号 -->
+            <div v-if="multiplayer.mySeat.value && (roomState?.stage === 'revealing' || roomState?.stage === 'speaking' || roomState?.stage === 'voting')" class="secret-card-box">
+              <div 
+                class="secret-card" 
+                :class="{ flipped: isCardRevealed }"
+                @click="isCardRevealed = !isCardRevealed"
+              >
+                <div class="card-face front">
+                  <Lock class="w-6 h-6 text-amber-400 mb-1" />
+                  <span class="font-arcade text-xs text-amber-200">点击翻开我的绝密暗号</span>
                 </div>
-                <div class="seat-vote-count font-arcade" v-if="gameStage === 'vote_reveal'">
-                  票数: <b class="text-amber-400">{{ p.votesReceived }}</b>
+                <div class="card-face back">
+                  <span class="font-arcade text-xs text-slate-300">您的暗号词汇：</span>
+                  <span class="secret-word-display font-bold text-amber-300 text-lg">{{ roomState?.myWord || '保密中' }}</span>
+                  <span class="font-arcade text-[10px] text-cyan-300 mt-1">切勿直接念出原词！</span>
                 </div>
-              </div>
-              <!-- 发言话筒标志 -->
-              <div v-if="activeSpeakerIndex === idx && gameStage === 'describe' && p.isAlive" class="mic-badge animate-bounce">
-                <Mic class="w-3 h-3 text-cyan-400" />
               </div>
             </div>
 
-            <!-- 玩家最新发言气泡 -->
-            <div v-if="p.lastSpeech" class="speech-bubble">
-              <span class="speech-text">{{ p.lastSpeech }}</span>
+            <!-- 阶段 B：卧底绝地反猜控制区 (仅被淘汰且为卧底的玩家操作) -->
+            <div v-else-if="roomState?.stage === 'spy_guess'" class="spy-guess-box glass-panel">
+              <Flame class="w-8 h-8 text-amber-400 animate-spin mb-1" />
+              <h4 class="font-arcade text-white text-sm">【卧底绝地反猜】</h4>
+              <p class="text-xs text-slate-300">
+                被放逐玩家 [{{ roomState.eliminatedPlayerName }}] 是卧底！
+              </p>
+              <div v-if="isEliminatedSpyMe" class="mt-2 w-full flex flex-col items-center gap-2">
+                <input 
+                  v-model="spyGuessInput" 
+                  placeholder="猜猜平民手里的词汇是什么..." 
+                  class="custom-input text-center"
+                  @keyup.enter="handleSendSpyGuess"
+                />
+                <button class="btn-arcade btn-primary w-full" @click="handleSendSpyGuess">
+                  <span>确认反猜！</span>
+                </button>
+              </div>
+              <p v-else class="text-xs text-cyan-300 mt-2 font-arcade">
+                等待卧底反猜中 ({{ roomState.turnTimeLeft }}s)...
+              </p>
+            </div>
+
+            <!-- 阶段 C：终局公布所有身份词 -->
+            <div v-else-if="roomState?.stage === 'ended'" class="game-over-box glass-panel">
+              <Trophy class="w-8 h-8 text-amber-400 mb-1" />
+              <h4 class="font-arcade text-lg font-bold text-amber-300">
+                {{ roomState.winnerSide === 'undercover' ? '👿 卧底阵营取得最终胜利！' : '🎉 平民阵营大获全胜！' }}
+              </h4>
+              <div class="words-reveal mt-2">
+                <span class="font-arcade text-sm">平民词：<b class="text-emerald-400">【{{ roomState.civilianWord }}】</b></span>
+                <span class="font-arcade text-sm">卧底词：<b class="text-rose-400">【{{ roomState.spyWord }}】</b></span>
+              </div>
+            </div>
+
+            <!-- 阶段 D：等待大厅 -->
+            <div v-else class="waiting-box">
+              <ShieldCheck class="w-10 h-10 text-cyan-400 mb-1 animate-bounce" />
+              <span class="font-arcade text-white text-sm">谁是卧底 · 6人圆桌</span>
+              <span class="font-arcade text-xs text-slate-400 mt-1">
+                {{ seatedCount >= 3 ? '已就绪，房主可点击上方开始！' : '请点击座位入座，满3人即可开始！' }}
+              </span>
             </div>
           </div>
         </div>
 
-        <!-- 底部发言操作栏 -->
-        <footer class="action-dock glass-panel">
-          <!-- 描述阶段：轮到我发言 -->
-          <div v-if="gameStage === 'describe' && activeSpeakerIndex === 0 && humanPlayer?.isAlive" class="dock-row">
-            <span class="font-arcade text-xs text-cyan-300">轮到您描述手牌暗号：</span>
+        <!-- 底部轮到我发言时的操作栏 -->
+        <footer class="bottom-action-dock glass-panel">
+          <div v-if="multiplayer.isSpeaker.value" class="speaker-controller">
+            <span class="font-arcade text-xs text-amber-300">🎙️ 轮到您用一句话描述暗号：</span>
             <input 
-              v-model="speechInput" 
-              placeholder="用一句话描述你的词，切忌直接说出答案..." 
-              @keyup.enter="handleHumanSpeak"
+              v-model="mySpeechInput" 
+              placeholder="用一句巧妙的话描述，切忌出现原词..." 
+              class="speech-input font-arcade"
+              @keyup.enter="handleFinishSpeech"
             />
-            <button class="btn-arcade btn-primary" @click="handleHumanSpeak">发言完毕</button>
-          </div>
-
-          <!-- 投票阶段：我进行投票 -->
-          <div v-else-if="gameStage === 'voting' && humanPlayer?.isAlive" class="dock-row">
-            <span class="font-arcade text-xs text-amber-300">点击牌桌席位头像，投票指认卧底：</span>
-            <button 
-              class="btn-arcade btn-danger" 
-              :disabled="!selectedVoteId"
-              @click="submitVote"
-            >
-              确定投票放逐该玩家
+            <button class="btn-arcade btn-primary btn-submit-speech" @click="handleFinishSpeech">
+              <Send class="w-4 h-4" />
+              <span>提交发言</span>
             </button>
           </div>
-
-          <!-- 其他等待状态 -->
-          <div v-else class="dock-row waiting">
-            <Loader2 class="w-4 h-4 animate-spin text-cyan-400" />
-            <span class="font-arcade text-xs text-slate-300">{{ waitingPromptText }}</span>
+          <div v-else class="speaker-idle-tip font-arcade">
+            <template v-if="roomState?.stage === 'speaking'">
+              <span>👀 当前由 [{{ roomState?.speakerNickname }}] 描述发言中，请仔细甄别蛛丝马迹...</span>
+            </template>
+            <template v-else-if="roomState?.stage === 'voting'">
+              <span>🗳️ 投票指认阶段进行中，请在上方圆桌点击玩家头像下方的【指认 TA】！</span>
+            </template>
+            <template v-else>
+              <span>自由换座：点击圆桌任意空白席位，即可立即移至该座位！</span>
+            </template>
           </div>
         </footer>
       </div>
 
-      <!-- 右侧：常驻各轮发言记录与推理复盘 -->
-      <aside class="chat-sidebar glass-panel">
+      <!-- 右侧：常驻战报与玩家交流面板 -->
+      <aside class="sidebar-chat-panel glass-panel">
         <div class="sidebar-header">
           <div class="header-tab">
             <MessageSquare class="w-4 h-4 text-cyan-400" />
-            <span class="font-arcade text-xs text-cyan-300">发言记录 & 推理线索</span>
+            <span class="font-arcade text-xs text-cyan-300">探员对决 · 战报记录</span>
           </div>
-          <span class="clue-tag font-arcade">🔍 蛛丝马迹</span>
+          <span class="conn-dot" :class="{ online: multiplayer.isConnected.value }">
+            {{ multiplayer.isConnected.value ? '● 实时' : '○ 断开' }}
+          </span>
         </div>
 
-        <div class="sidebar-body" ref="logsContainer">
-          <div v-for="(log, i) in actionLogs" :key="i" class="log-item" :class="log.type">
-            <span class="log-time font-arcade">[{{ log.time }}]</span>
-            <span class="log-text">{{ log.text }}</span>
+        <div class="sidebar-body" ref="logContainer">
+          <div v-for="(l, i) in multiplayer.logs.value" :key="i" class="log-item">
+            <span class="log-time font-arcade">[{{ l.time }}]</span>
+            <span v-if="l.sender" class="log-sender font-bold">{{ l.sender }}: </span>
+            <span class="log-text">{{ l.text }}</span>
           </div>
         </div>
 
         <div class="sidebar-footer">
-          <div class="rule-hint-box text-xs text-slate-400">
-            💡 规则：平民拿到相同词，卧底拿到相似词。每轮逐人描述，投票放逐可疑者。卧底出局后若猜中平民词则瞬间翻盘！
+          <div class="emoji-bar">
+            <button v-for="e in ['🕵️', '🔥', '👀', '🤫', '😭', '🎉', '😎']" :key="e" @click="sendQuickEmoji(e)">
+              {{ e }}
+            </button>
+          </div>
+          <div class="chat-input-row">
+            <input 
+              v-model="chatInput" 
+              placeholder="交流分析或发表看法..." 
+              @keyup.enter="handleSendChat"
+            />
+            <button class="btn-send-chat font-arcade" @click="handleSendChat">
+              <span>发送</span>
+            </button>
           </div>
         </div>
       </aside>
     </div>
 
-    <!-- 卧底绝地反猜弹窗 -->
-    <Modal v-model="showUndercoverGuessModal" title="🔥 卧底绝地反猜机会！" width="460px">
-      <div class="undercover-guess-body">
-        <p class="text-sm text-slate-300">
-          卧底 <b>{{ eliminatedPlayer?.name }}</b> 被公投出局！但仍有最后 1 次机会反猜平民暗号词，若猜中则<b>反败为胜</b>！
-        </p>
-        <div v-if="eliminatedPlayer?.isHuman" class="guess-input-box mt-3">
-          <input 
-            v-model="undercoverGuessInput" 
-            placeholder="输入你推测的平民暗号词..." 
-            @keyup.enter="handleUndercoverGuess"
-          />
-          <button class="btn-arcade btn-primary mt-2" @click="handleUndercoverGuess">提交绝地反猜</button>
+    <!-- 自建房间弹窗 -->
+    <Modal v-model="showCreateModal" title="自建卧底专属包厢" width="460px">
+      <div class="create-room-box font-arcade">
+        <div class="form-group">
+          <label>包厢名称</label>
+          <input v-model="customRoomName" placeholder="例如：福尔摩斯推理局" class="custom-input" />
         </div>
-        <div v-else class="bot-guessing-box mt-3 font-arcade">
-          <Loader2 class="w-4 h-4 animate-spin text-amber-400" />
-          <span>卧底 AI 正在绞尽脑汁分析平民发言...</span>
+        <div class="form-group mt-3">
+          <label>包厢房号 (ID)</label>
+          <input v-model="customRoomId" placeholder="例如：my_spy_666" class="custom-input" />
         </div>
+        <button class="btn-arcade btn-primary w-full mt-4" @click="handleCreateRoom">
+          <span>立即开房并就任房主</span>
+        </button>
       </div>
-    </Modal>
-
-    <!-- 游戏胜负大结算弹窗 -->
-    <Modal v-model="showResultModal" :title="resultTitle" width="520px">
-      <div class="settle-content">
-        <div class="result-banner" :class="{ 'is-civilian-win': winnerRole === 'civilian' }">
-          <div class="banner-icon">{{ winnerRole === 'civilian' ? '🏆' : '🕵️' }}</div>
-          <div class="banner-info">
-            <h3 class="banner-title font-arcade font-bold">
-              {{ winnerRole === 'civilian' ? '平民阵营大获全胜！' : '卧底阵营偷天换日成功！' }}
-            </h3>
-            <p class="text-xs text-slate-300 font-arcade">
-              奖励 🪙 100 金币 · 胜点记录入名人堂
-            </p>
-          </div>
-        </div>
-
-        <div class="words-reveal-box mt-4">
-          <div class="reveal-row">
-            <span class="reveal-lbl">平民词：</span>
-            <span class="reveal-val text-emerald-400 font-bold font-arcade">{{ civilianWord }}</span>
-          </div>
-          <div class="reveal-row">
-            <span class="reveal-lbl">卧底词：</span>
-            <span class="reveal-val text-rose-400 font-bold font-arcade">{{ undercoverWord }}</span>
-          </div>
-        </div>
-
-        <div class="players-identity-list mt-3">
-          <div v-for="p in players" :key="p.id" class="p-identity-item">
-            <span class="p-avatar">{{ p.avatar }}</span>
-            <span class="p-name">{{ p.name }}</span>
-            <span class="p-role-tag" :class="p.role">
-              {{ p.role === 'undercover' ? '卧底' : (p.role === 'whiteboard' ? '白板' : '平民') }}
-            </span>
-            <span class="p-word text-xs text-slate-400">词: {{ p.word || '无' }}</span>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <button class="btn-arcade btn-primary" @click="resetGame">再来一局</button>
-      </template>
     </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { Eye, Mic, RotateCcw, MessageSquare, Loader2 } from 'lucide-vue-next'
-import { sound } from '@/utils/soundEngine'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
-import confetti from 'canvas-confetti'
+import { useUndercoverMultiplayer, type UndercoverPlayerSeat } from './useUndercoverMultiplayer'
+import { sound } from '@/utils/soundEngine'
 import Modal from '@/components/common/Modal.vue'
+import confetti from 'canvas-confetti'
+import { 
+  Plus, Share2, Sparkles, MessageSquare, Eye, Lock, 
+  Volume2, ShieldAlert, Flame, Trophy, ShieldCheck, Send 
+} from 'lucide-vue-next'
 
-interface Player {
-  id: string
-  name: string
-  avatar: string
-  role: 'civilian' | 'undercover' | 'whiteboard'
-  word: string
-  isHuman: boolean
-  isAlive: boolean
-  lastSpeech: string
-  votesReceived: number
-}
-
+const authStore = useAuthStore()
 const userStore = useUserStore()
+const multiplayer = useUndercoverMultiplayer()
 
-// 精心准备的 25 组经典相似词库
-const wordPairs = [
-  { civilian: '麦当劳', undercover: '肯德基', hint: '快餐巨头' },
-  { civilian: '微信', undercover: 'QQ', hint: '腾讯社交软件' },
-  { civilian: '玫瑰', undercover: '月季', hint: '带刺的花' },
-  { civilian: '班主任', undercover: '辅导员', hint: '学校里的老师' },
-  { civilian: '眉毛', undercover: '胡子', hint: '人脸上的毛发' },
-  { civilian: '淘宝', undercover: '京东', hint: '国内电商网购' },
-  { civilian: '奶茶', undercover: '咖啡', hint: '年轻人常喝的饮品' },
-  { civilian: '自行车', undercover: '电动车', hint: '两轮代步工具' },
-  { civilian: '橙子', undercover: '橘子', hint: '富含维C的酸甜水果' },
-  { civilian: '辣椒', undercover: '芥末', hint: '刺激辛辣的调料' },
-  { civilian: '口红', undercover: '唇膏', hint: '涂在嘴唇上的化妆品' },
-  { civilian: '蜘蛛侠', undercover: '蝙蝠侠', hint: '著名超级英雄' },
-  { civilian: '豆浆', undercover: '油条', hint: '传统经典中式早餐' },
-  { civilian: '冰淇淋', undercover: '雪糕', hint: '夏日冰爽甜食' },
-  { civilian: '跑步机', undercover: '椭圆机', hint: '健身房有氧器械' }
+const currentRoomId = ref('undercover_1')
+const showCreateModal = ref(false)
+const customRoomName = ref('')
+const customRoomId = ref(`undercover_${Date.now().toString().slice(-4)}`)
+const copySuccess = ref(false)
+const chatInput = ref('')
+const mySpeechInput = ref('')
+const spyGuessInput = ref('')
+const isCardRevealed = ref(false)
+const logContainer = ref<HTMLElement | null>(null)
+
+const presetRooms = [
+  { id: 'undercover_1', name: '🕵️ 卧底 1 号包厢' },
+  { id: 'undercover_2', name: '🕵️ 推理 2 号包厢' }
 ]
 
-const gameStage = ref<'ready' | 'describe' | 'voting' | 'vote_reveal' | 'ended'>('ready')
-const roundNumber = ref(1)
-const activeSpeakerIndex = ref(0)
-const isCardRevealed = ref(false)
-const selectedVoteId = ref<string | null>(null)
-const speechInput = ref('')
-const undercoverGuessInput = ref('')
-const showUndercoverGuessModal = ref(false)
-const showResultModal = ref(false)
-const winnerRole = ref<'civilian' | 'undercover'>('civilian')
-const eliminatedPlayer = ref<Player | null>(null)
+const roomState = computed(() => multiplayer.roomState.value)
 
-const civilianWord = ref('')
-const undercoverWord = ref('')
+const seatedCount = computed(() => {
+  if (!roomState.value?.seats) return 0
+  return roomState.value.seats.filter(Boolean).length
+})
 
-const logsContainer = ref<HTMLElement | null>(null)
-const actionLogs = ref<{ time: string; text: string; type?: string }[]>([])
+const seatsDisplay = computed(() => {
+  if (!roomState.value?.seats) return Array(6).fill(null)
+  return roomState.value.seats
+})
 
-function addLog(text: string, type?: string) {
-  actionLogs.value.push({
-    time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-    text,
-    type
-  })
-  if (actionLogs.value.length > 60) actionLogs.value.shift()
-  nextTick(() => {
-    if (logsContainer.value) {
-      logsContainer.value.scrollTop = logsContainer.value.scrollHeight
-    }
-  })
+const isEliminatedSpyMe = computed(() => {
+  if (!roomState.value?.eliminatedPlayerName) return false
+  return roomState.value.eliminatedPlayerName === (authStore.currentUser?.nickname || userStore.nickname)
+})
+
+function canVoteFor(seat: UndercoverPlayerSeat, idx: number) {
+  if (roomState.value?.stage !== 'voting') return false
+  const mySeat = multiplayer.mySeat.value
+  if (!mySeat || !mySeat.isAlive) return false
+  // 不能投自己，且目标必须存活
+  return mySeat.seatIndex !== idx && seat.isAlive
 }
 
-// 6 位固定玩家 (1 人类 + 5 智能电脑)
-const players = ref<Player[]>([])
-
-const humanPlayer = computed(() => players.value.find(p => p.isHuman))
-const alivePlayersCount = computed(() => players.value.filter(p => p.isAlive).length)
-const undercoverCount = computed(() => players.value.filter(p => p.role === 'undercover' && p.isAlive).length)
-
-const currentStageName = computed(() => {
-  switch (gameStage.value) {
-    case 'ready': return '暗号就绪'
-    case 'describe': return '逐人描摹'
-    case 'voting': return '全民公投'
-    case 'vote_reveal': return '公投揭晓'
-    case 'ended': return '对局结算'
+function switchRoom(roomId: string, name?: string) {
+  currentRoomId.value = roomId
+  const user = {
+    userId: authStore.currentUser?.id || `guest_${Date.now()}`,
+    nickname: authStore.currentUser?.nickname || userStore.nickname || '探员',
+    avatar: authStore.currentUser?.avatar || userStore.avatar || '🕵️'
   }
-})
+  multiplayer.connect(roomId, user, name)
+}
 
-const waitingPromptText = computed(() => {
-  if (gameStage.value === 'describe') {
-    return `轮到 [${players.value[activeSpeakerIndex.value]?.name}] 斟酌陈述中...`
+function handleCreateRoom() {
+  const roomId = customRoomId.value.trim() || `undercover_${Date.now()}`
+  const name = customRoomName.value.trim() || '自建卧底包厢'
+  showCreateModal.value = false
+  switchRoom(roomId, name)
+}
+
+function handleSeatClick(idx: number) {
+  if (!authStore.isLoggedIn) {
+    authStore.openAuthModal('login')
+    return
   }
-  return '等待对局推进...'
-})
-
-const resultTitle = computed(() => {
-  return winnerRole.value === 'civilian' ? '🎉 平民胜利！' : '🕵️ 卧底胜利！'
-})
-
-// 初始化与发暗号
-function resetGame() {
   sound.click()
-  showResultModal.value = false
-  showUndercoverGuessModal.value = false
+  multiplayer.sit(idx)
+}
+
+function handleStartGame() {
+  sound.victory()
   isCardRevealed.value = false
-  selectedVoteId.value = null
-  speechInput.value = ''
-  roundNumber.value = 1
-  actionLogs.value = []
-
-  // 随机抽取一组词汇
-  const pair = wordPairs[Math.floor(Math.random() * wordPairs.length)]
-  civilianWord.value = pair.civilian
-  undercoverWord.value = pair.undercover
-
-  // 6 位玩家，随机指定 1 名卧底
-  const undercoverIdx = Math.floor(Math.random() * 6)
-
-  players.value = [
-    { id: 'p0', name: userStore.nickname || '我', avatar: userStore.avatar || '🤠', role: 'civilian', word: civilianWord.value, isHuman: true, isAlive: true, lastSpeech: '', votesReceived: 0 },
-    { id: 'p1', name: '机灵阿强', avatar: '👦', role: 'civilian', word: civilianWord.value, isHuman: false, isAlive: true, lastSpeech: '', votesReceived: 0 },
-    { id: 'p2', name: '敏锐小美', avatar: '👧', role: 'civilian', word: civilianWord.value, isHuman: false, isAlive: true, lastSpeech: '', votesReceived: 0 },
-    { id: 'p3', name: '神秘客', avatar: '🎩', role: 'civilian', word: civilianWord.value, isHuman: false, isAlive: true, lastSpeech: '', votesReceived: 0 },
-    { id: 'p4', name: '眼镜柯南', avatar: '👓', role: 'civilian', word: civilianWord.value, isHuman: false, isAlive: true, lastSpeech: '', votesReceived: 0 },
-    { id: 'p5', name: '大侦探', avatar: '🔍', role: 'civilian', word: civilianWord.value, isHuman: false, isAlive: true, lastSpeech: '', votesReceived: 0 }
-  ]
-
-  players.value[undercoverIdx].role = 'undercover'
-  players.value[undercoverIdx].word = undercoverWord.value
-
-  addLog(`🎲 新对局开始！场上共有 6 位牌手，暗藏 1 名卧底！`)
-  gameStage.value = 'describe'
-  activeSpeakerIndex.value = 0
-  startNextSpeaker()
+  multiplayer.startGame()
 }
 
-// 推进下一位发言者
-function startNextSpeaker() {
-  if (activeSpeakerIndex.value >= players.value.length) {
-    // 全员发言完毕，进入投票
-    startVotingPhase()
-    return
-  }
-
-  const p = players.value[activeSpeakerIndex.value]
-  if (!p.isAlive) {
-    activeSpeakerIndex.value++
-    startNextSpeaker()
-    return
-  }
-
-  if (p.isHuman) {
-    addLog(`📢 轮到您发言，请仔细斟酌词句！`)
-  } else {
-    // 电脑 AI 发言
-    setTimeout(() => {
-      generateBotSpeech(p)
-      activeSpeakerIndex.value++
-      startNextSpeaker()
-    }, 1800)
-  }
-}
-
-// 模拟电脑幽默、模糊且符合暗号的描述
-function generateBotSpeech(bot: Player) {
-  const speechTemplates: Record<string, string[]> = {
-    '麦当劳': ['是红黄配色的常见快餐', '全世界年轻人基本都吃过', '炸薯条和汉堡是招牌', '黄色大M很显眼'],
-    '肯德基': ['白胡子爷爷是标志性门面', '炸鸡非常出名味道香脆', '经常跟竞争对手开在隔壁', '吮指原味鸡深入人心'],
-    '微信': ['天天都在使用的通讯软件', '绿色的图标大家很熟悉', '发朋友圈和扫码支付必不可少', '工作生活不可或缺'],
-    'QQ': ['小企鹅是吉祥物', '以前玩空间偷菜常用它', '传大文件特别方便', '功能丰富年轻人很喜欢'],
-    '玫瑰': ['象征浪漫与爱情的花', '带刺但是很好看', '情人节经常脱销', '花瓣很香颜色鲜艳'],
-    '月季': ['公园绿化带随处可见', '花期特别长经常盛开', '跟某种浪漫花卉长得很像', '带刺但非常顽强好养']
-  }
-
-  const pool = speechTemplates[bot.word] || ['平时生活中经常会见到这个', '大家都知道它的特征', '很多人都很喜欢它', '它具备独特的辨识度']
-  const randomSpeech = pool[Math.floor(Math.random() * pool.length)]
-
-  bot.lastSpeech = randomSpeech
-  addLog(`🗣️ [${bot.name}]: "${randomSpeech}"`)
-  sound.click()
-}
-
-// 人类玩家发言
-function handleHumanSpeak() {
-  if (!speechInput.value.trim()) return
-  const me = players.value[0]
-  me.lastSpeech = speechInput.value.trim()
-  addLog(`🗣️ [我]: "${me.lastSpeech}"`)
-  speechInput.value = ''
-  sound.click()
-
-  activeSpeakerIndex.value++
-  startNextSpeaker()
-}
-
-// 开启投票阶段
-function startVotingPhase() {
-  gameStage.value = 'voting'
-  selectedVoteId.value = null
-  addLog(`🗳️ 全员发言完毕！请审视各家陈述，点击头像投票放逐可疑卧底！`)
-}
-
-function handleVoteClick(p: Player) {
-  if (gameStage.value !== 'voting' || !p.isAlive || p.id === 'p0') return
-  selectedVoteId.value = p.id
-  sound.click()
-}
-
-// 提交投票并结算票数
-function submitVote() {
-  if (!selectedVoteId.value) return
-  gameStage.value = 'vote_reveal'
-
-  // 重置票数
-  players.value.forEach(p => p.votesReceived = 0)
-
-  // 人类投票
-  const votedTarget = players.value.find(p => p.id === selectedVoteId.value)
-  if (votedTarget) votedTarget.votesReceived++
-
-  // 电脑玩家模拟投票
-  const aliveOthers = players.value.filter(p => p.isAlive)
-  players.value.forEach(bot => {
-    if (!bot.isHuman && bot.isAlive) {
-      // 电脑随机投向其他存活者
-      const targets = aliveOthers.filter(t => t.id !== bot.id)
-      const target = targets[Math.floor(Math.random() * targets.length)]
-      target.votesReceived++
-    }
+function handleCopyInvite() {
+  const shareUrl = `${window.location.origin}/game/undercover?room=${currentRoomId.value}`
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    copySuccess.value = true
+    setTimeout(() => { copySuccess.value = false }, 2500)
   })
-
-  // 找出最高得票者
-  aliveOthers.sort((a, b) => b.votesReceived - a.votesReceived)
-  const eliminated = aliveOthers[0]
-  eliminated.isAlive = false
-  eliminatedPlayer.value = eliminated
-
-  addLog(`📢 公投揭晓：[${eliminated.name}] 以 ${eliminated.votesReceived} 票被最高票放逐！`, 'danger')
-  sound.gameover()
-
-  setTimeout(() => {
-    handleAfterElimination(eliminated)
-  }, 2200)
 }
 
-// 放逐后判定胜负或绝地反猜
-function handleAfterElimination(eliminated: Player) {
-  if (eliminated.role === 'undercover') {
-    // 卧底被抓，给一次绝地反猜机会！
-    showUndercoverGuessModal.value = true
-    if (!eliminated.isHuman) {
-      // 电脑卧底进行模拟猜测
-      setTimeout(() => {
-        showUndercoverGuessModal.value = false
-        // 电脑有 30% 概率猜中翻盘
-        if (Math.random() < 0.3) {
-          addLog(`💥 卧底 [${eliminated.name}] 绝地反猜完全正确！逆风翻盘！`, 'danger')
-          concludeGame('undercover')
-        } else {
-          addLog(`🎉 卧底猜词失败！平民大获全胜！`)
-          concludeGame('civilian')
-        }
-      }, 2500)
-    }
-  } else {
-    // 平民被冤枉淘汰，检查场上剩余卧底数
-    const aliveUndercovers = players.value.filter(p => p.role === 'undercover' && p.isAlive)
-    const aliveCivilians = players.value.filter(p => p.role === 'civilian' && p.isAlive)
+function handleFinishSpeech() {
+  if (!mySpeechInput.value.trim()) return
+  sound.click()
+  multiplayer.speak(mySpeechInput.value.trim())
+  mySpeechInput.value = ''
+}
 
-    if (aliveUndercovers.length >= aliveCivilians.length) {
-      // 卧底人数等于或超过平民，卧底胜！
-      concludeGame('undercover')
-    } else {
-      // 继续下一轮
-      roundNumber.value++
-      gameStage.value = 'describe'
-      activeSpeakerIndex.value = 0
-      addLog(`🔄 幸存平民仍占多数，进入第 ${roundNumber.value} 轮发言！`)
-      startNextSpeaker()
-    }
+function handleVoteClick(targetIdx: number) {
+  sound.click()
+  multiplayer.vote(targetIdx)
+}
+
+function handleSendSpyGuess() {
+  if (!spyGuessInput.value.trim()) return
+  multiplayer.spyGuess(spyGuessInput.value.trim())
+  spyGuessInput.value = ''
+}
+
+function handleSendChat() {
+  if (!chatInput.value.trim()) return
+  multiplayer.chat(chatInput.value)
+  chatInput.value = ''
+}
+
+function sendQuickEmoji(e: string) {
+  multiplayer.chat(e)
+}
+
+watch(() => multiplayer.logs.value.length, async () => {
+  await nextTick()
+  if (logContainer.value) {
+    logContainer.value.scrollTop = logContainer.value.scrollHeight
   }
-}
+})
 
-// 人类卧底反猜
-function handleUndercoverGuess() {
-  showUndercoverGuessModal.value = false
-  if (undercoverGuessInput.value.trim() === civilianWord.value) {
-    addLog(`💥 恭喜您一语中的，成功猜出平民暗号【${civilianWord.value}】！绝地反杀！`)
-    concludeGame('undercover')
-  } else {
-    addLog(`❌ 很遗憾猜错了！平民词是【${civilianWord.value}】。平民胜利！`)
-    concludeGame('civilian')
-  }
-}
-
-function concludeGame(winner: 'civilian' | 'undercover') {
-  gameStage.value = 'ended'
-  winnerRole.value = winner
-  showResultModal.value = true
-
-  const me = humanPlayer.value
-  const isMeWinner = me && me.role === winner
-  if (isMeWinner) {
+watch(() => roomState.value?.stage, (newStage) => {
+  if (newStage === 'ended') {
+    confetti({ particleCount: 70, spread: 80 })
     sound.victory()
-    confetti({ particleCount: 90, spread: 80 })
-    userStore.addCoins(100)
-  } else {
-    sound.gameover()
+  } else if (newStage === 'revealing') {
+    isCardRevealed.value = false
   }
-}
+})
 
 onMounted(() => {
-  resetGame()
+  switchRoom('undercover_1')
+})
+
+onUnmounted(() => {
+  multiplayer.disconnect()
 })
 </script>
 
@@ -563,7 +456,7 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: radial-gradient(circle at center, #0f172a 0%, #030712 100%);
+  background: radial-gradient(circle at center, #0d1222 0%, #030712 100%);
   user-select: none;
   overflow: hidden;
 }
@@ -575,6 +468,7 @@ onMounted(() => {
   padding: 8px 16px;
   background: rgba(15, 23, 42, 0.9);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 12px;
 }
 
 .hud-left {
@@ -585,57 +479,100 @@ onMounted(() => {
 
 .game-tag {
   font-size: 13px;
-  font-weight: 900;
-  color: #6366f1;
+  font-weight: bold;
+  color: #a78bfa;
 }
 
-.stage-pill {
+.room-selector {
+  display: flex;
+  gap: 6px;
+}
+
+.room-chip {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  color: #a5b4fc;
+  gap: 4px;
 }
 
-.stage-pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #6366f1;
+.room-chip.active {
+  background: rgba(167, 139, 250, 0.2);
+  border-color: #a78bfa;
+  color: #fff;
 }
 
-.stats-row {
+.btn-create-chip {
+  background: rgba(236, 72, 153, 0.15);
+  border-color: rgba(236, 72, 153, 0.4);
+  color: #f472b6;
+}
+
+.hud-center {
   display: flex;
+  align-items: center;
   gap: 12px;
 }
 
-.stat-badge {
+.stage-pill {
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 12px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  background: rgba(0, 0, 0, 0.35);
-  padding: 3px 12px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 6px;
 }
 
-.stat-badge .lbl { font-size: 10px; color: #64748b; }
-.stat-badge .val { font-size: 12px; font-weight: bold; }
+.stage-pill.revealing { border-color: #38bdf8; color: #7dd3fc; }
+.stage-pill.speaking { border-color: #f59e0b; color: #fde68a; }
+.stage-pill.voting { border-color: #f43f5e; color: #fda4af; }
+.stage-pill.spy-guess { border-color: #eab308; color: #fde047; }
+.stage-pill.ended { border-color: #22c55e; color: #86efac; }
+.stage-pill.waiting { color: #94a3b8; }
 
-.btn-hud {
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-host-action {
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: 1px solid #fef08a;
+  color: #1e1b4b;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.btn-host-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-tool {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #cbd5e1;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -644,328 +581,420 @@ onMounted(() => {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
-.round-table-zone {
+.table-workspace {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px;
-  position: relative;
+  padding: 10px;
+  gap: 10px;
   overflow: hidden;
 }
 
-.table-card {
+/* 扑克圆桌容器 */
+.poker-round-table {
   flex: 1;
   position: relative;
-  border-radius: 200px;
-  background: radial-gradient(ellipse at center, #1e1b4b 0%, #0f172a 100%);
-  border: 8px solid #312e81;
-  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.8), 0 20px 50px rgba(0, 0, 0, 0.7);
+  border-radius: 24px;
+  background: radial-gradient(ellipse at center, #1e1b4b 0%, #090916 100%);
+  border: 2px solid rgba(167, 139, 250, 0.2);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(124, 58, 237, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.table-center-hub {
-  z-index: 2;
+.seats-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-.secret-word-card {
-  width: 180px;
-  height: 100px;
+.round-seat {
+  position: absolute;
+  pointer-events: auto;
+  width: 140px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  border: 2px dashed rgba(99, 102, 241, 0.6);
-  cursor: pointer;
-  perspective: 600px;
-  transition: all 0.3s;
-}
-
-.secret-word-card:hover {
-  transform: scale(1.04);
-  border-color: #818cf8;
-}
-
-.card-inner {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.card-front {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: #94a3b8;
-  font-size: 11px;
-}
-
-.secret-word-card.revealed .card-front { display: none; }
-.secret-word-card:not(.revealed) .card-back { display: none; }
-
-.card-back {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.secret-word-label { font-size: 10px; color: #94a3b8; }
-.secret-word-val { font-size: 16px; }
-
-.center-status-box {
+  padding: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  transition: all 0.25s;
 }
 
-.status-icon { font-size: 32px; }
+/* 6 席位环绕坐标布局 */
+.round-seat.pos-0 { bottom: 15px; left: 50%; transform: translateX(-50%); }
+.round-seat.pos-1 { bottom: 90px; left: 40px; }
+.round-seat.pos-2 { top: 90px; left: 40px; }
+.round-seat.pos-3 { top: 15px; left: 50%; transform: translateX(-50%); }
+.round-seat.pos-4 { top: 90px; right: 40px; }
+.round-seat.pos-5 { bottom: 90px; right: 40px; }
 
-/* 6个席位环形排布 */
-.table-seat {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  z-index: 5;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.table-seat:hover { transform: scale(1.05); }
-
-.seat-pos-0 { bottom: 15px; left: 50%; transform: translateX(-50%); }
-.seat-pos-1 { bottom: 65px; left: 60px; }
-.seat-pos-2 { top: 65px; left: 60px; }
-.seat-pos-3 { top: 15px; left: 50%; transform: translateX(-50%); }
-.seat-pos-4 { top: 65px; right: 60px; }
-.seat-pos-5 { bottom: 65px; right: 60px; }
-
-.seat-badge {
-  background: rgba(15, 23, 42, 0.92);
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  border-radius: 28px;
-  padding: 3px 12px 3px 3px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.6);
-  position: relative;
-}
-
-.table-seat.is-active .seat-badge {
+.round-seat.is-me {
   border-color: #38bdf8;
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
 }
 
-.table-seat.is-selected-vote .seat-badge {
-  border-color: #ef4444;
-  box-shadow: 0 0 18px rgba(239, 68, 68, 0.7);
+.round-seat.is-speaking {
+  border-color: #f59e0b;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.6);
+  animation: pulse 1.5s infinite;
 }
 
-.table-seat.is-eliminated {
-  opacity: 0.4;
-  filter: grayscale(0.9);
+.round-seat.is-dead {
+  opacity: 0.5;
+  filter: grayscale(80%);
 }
 
-.avatar-ring {
-  width: 36px;
-  height: 36px;
+.vote-count-pill {
+  position: absolute;
+  top: -12px;
+  background: #f43f5e;
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 1px 8px;
+  border-radius: 10px;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.8);
+}
+
+.seat-avatar-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 19px;
-  position: relative;
+  font-size: 22px;
 }
 
-.dead-tag {
-  position: absolute;
-  bottom: -2px;
-  background: #ef4444;
-  color: #fff;
-  font-size: 8px;
-  padding: 1px 3px;
-  border-radius: 3px;
-}
-
-.seat-info { display: flex; flex-direction: column; }
-.seat-name { font-size: 11px; color: #f8fafc; font-weight: 600; }
-.me-tag { color: #38bdf8; }
-.seat-vote-count { font-size: 10px; color: #94a3b8; }
-
-.mic-badge {
+.host-crown {
   position: absolute;
   top: -8px;
-  right: -8px;
-  background: #0284c7;
-  padding: 3px;
-  border-radius: 50%;
+  right: -6px;
+  font-size: 14px;
 }
 
-.speech-bubble {
-  margin-top: 4px;
-  background: rgba(0, 0, 0, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #f1f5f9;
-  padding: 3px 8px;
-  border-radius: 8px;
-  font-size: 11px;
-  max-width: 140px;
+.speaking-mic {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  font-size: 12px;
+}
+
+.seat-meta {
   text-align: center;
 }
 
-/* 底部操作坞 */
-.action-dock {
+.seat-name {
+  font-size: 12px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.me-tag {
+  color: #38bdf8;
+  font-size: 10px;
+}
+
+.seat-status {
+  font-size: 10px;
+}
+
+.speech-bubble {
+  position: absolute;
+  bottom: -32px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid #38bdf8;
+  color: #7dd3fc;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+}
+
+.vote-action-wrap {
+  margin-top: 4px;
+  width: 100%;
+}
+
+.btn-vote-target {
+  width: 100%;
+  padding: 3px 0;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border: 1px solid #fca5a5;
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.btn-vote-target:hover {
+  transform: scale(1.05);
+}
+
+.btn-switch-seat {
+  width: 100%;
+  height: 60px;
+  background: transparent;
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  color: #64748b;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 16px;
-  margin-top: 10px;
-  border-radius: 10px;
+  gap: 4px;
+  transition: all 0.2s;
 }
 
-.dock-row {
+.btn-switch-seat:hover {
+  border-color: #a78bfa;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.1);
+}
+
+/* 圆桌正中心 HUB */
+.table-center-hub {
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 280px;
+  text-align: center;
+}
+
+/* 翻转暗号卡片 */
+.secret-card-box {
+  perspective: 800px;
+}
+
+.secret-card {
+  width: 220px;
+  height: 120px;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.secret-card.flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.card-face.front {
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+}
+
+.card-face.back {
+  background: linear-gradient(135deg, #312e81, #1e1b4b);
+  transform: rotateY(180deg);
+  border-color: #fbbf24;
+}
+
+.spy-guess-box, .game-over-box {
+  padding: 16px 20px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.waiting-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 底部操作控制台 */
+.bottom-action-dock {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+}
+
+.speaker-controller {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  justify-content: center;
+  max-width: 650px;
 }
 
-.dock-row input {
+.speech-input {
   flex: 1;
-  max-width: 400px;
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
 }
 
-.btn-arcade {
-  padding: 7px 16px;
-  border-radius: 6px;
-  border: none;
-  font-weight: bold;
-  font-size: 12px;
-  cursor: pointer;
-  color: #fff;
+.speech-input:focus {
+  border-color: #38bdf8;
 }
 
-.btn-primary { background: #0284c7; }
-.btn-danger { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-submit-speech {
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
 
-/* 侧边常驻日志 */
-.chat-sidebar {
-  width: 300px;
+.speaker-idle-tip {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* 右侧常驻面板 */
+.sidebar-chat-panel {
+  width: 290px;
   display: flex;
   flex-direction: column;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.85);
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.header-tab { display: flex; align-items: center; gap: 6px; }
-.clue-tag { font-size: 10px; color: #818cf8; }
+.header-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conn-dot {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.conn-dot.online {
+  color: #34d399;
+}
 
 .sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   font-size: 12px;
 }
 
-.log-item {
-  line-height: 1.35;
-  color: #cbd5e1;
-}
-
-.log-item.danger { color: #f87171; font-weight: bold; }
-
-.log-time { color: #64748b; margin-right: 4px; font-size: 10px; }
+.log-time { color: #64748b; font-size: 10px; margin-right: 4px; }
+.log-sender { color: #a78bfa; }
+.log-text { color: #cbd5e1; line-height: 1.3; }
 
 .sidebar-footer {
-  padding: 10px;
+  padding: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.2);
 }
 
-/* 弹窗 */
-.settle-content {
+.emoji-bar {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 5px;
+  margin-bottom: 6px;
 }
 
-.result-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  border-radius: 10px;
-}
-
-.result-banner.is-civilian-win {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.4);
-}
-
-.banner-icon { font-size: 32px; }
-
-.words-reveal-box {
-  display: flex;
-  justify-content: space-around;
-  padding: 10px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 8px;
-}
-
-.reveal-lbl { font-size: 12px; color: #94a3b8; }
-.reveal-val { font-size: 14px; }
-
-.players-identity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.p-identity-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 6px;
-  font-size: 12px;
-}
-
-.p-role-tag {
-  padding: 1px 6px;
+.emoji-bar button {
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  font-size: 14px;
+  padding: 2px 5px;
   border-radius: 4px;
-  font-size: 10px;
+  cursor: pointer;
 }
 
-.p-role-tag.civilian { background: #0284c7; color: #fff; }
-.p-role-tag.undercover { background: #dc2626; color: #fff; }
-.p-role-tag.whiteboard { background: #64748b; color: #fff; }
+.chat-input-row {
+  display: flex;
+  gap: 5px;
+}
+
+.chat-input-row input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #fff;
+  font-size: 12px;
+  outline: none;
+}
+
+.chat-input-row input:focus {
+  border-color: #a78bfa;
+}
+
+.btn-send-chat {
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.btn-send-chat:hover {
+  background: #6d28d9;
+}
+
+/* 建房弹窗 */
+.custom-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+}
 </style>

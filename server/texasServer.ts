@@ -32,11 +32,15 @@ export interface PlayerSeat {
   evaluatedHand?: EvaluatedTexasHand
 }
 
+import { DrawRoomManager } from './drawServer.js'
+import { UndercoverRoomManager } from './undercoverServer.js'
+
 export type TexasStage = 'idle' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'ended'
 
 class TexasRoom {
   public id: string
   public name: string
+  public hostUserId: string = ''
   public smallBlind: number
   public bigBlind: number
   public seats: (PlayerSeat | null)[] = Array(6).fill(null)
@@ -115,6 +119,11 @@ class TexasRoom {
       if (idx !== -1) {
         const p = this.seats[idx]!
         this.addLog(`玩家 [${p.nickname}] 离开了连接`)
+        if (p.userId === this.hostUserId) {
+          const next = this.seats.find(s => s && s.userId !== p.userId)
+          this.hostUserId = next ? next.userId : ''
+          if (next) this.addLog(`👑 [${next.nickname}] 成为新房主`)
+        }
         if (this.stage === 'idle' || this.stage === 'ended') {
           this.seats[idx] = null
           this.broadcastSnapshot()
@@ -128,10 +137,25 @@ class TexasRoom {
   }
 
   private handleSitDown(ws: WebSocket, msg: { userId: string; nickname: string; avatar: string; chips: number; seatIndex?: number }) {
+    if (!this.hostUserId) {
+      this.hostUserId = msg.userId
+    }
+
     // 检查是否已坐下
     const existing = this.seats.findIndex(s => s && s.userId === msg.userId)
     if (existing !== -1) {
-      this.seats[existing]!.ws = ws
+      const player = this.seats[existing]!
+      player.ws = ws
+      const target = msg.seatIndex
+      // 自由换座：点击另一个有效空座位直接瞬移换座
+      if (target !== undefined && target >= 0 && target < 6 && target !== existing && this.seats[target] === null) {
+        this.seats[existing] = null
+        player.seatIndex = target
+        this.seats[target] = player
+        this.addLog(`🔄 [${player.nickname}] 换到了 ${target + 1} 号座`)
+        this.broadcastSnapshot()
+        return
+      }
       this.sendSnapshot(ws)
       return
     }
@@ -179,6 +203,11 @@ class TexasRoom {
       const p = this.seats[idx]!
       this.addLog(`🚪 [${p.nickname}] 离座离开牌桌`)
       this.seats[idx] = null
+      if (p.userId === this.hostUserId) {
+        const next = this.seats.find(Boolean)
+        this.hostUserId = next ? next.userId : ''
+        if (next) this.addLog(`👑 [${next.nickname}] 成为新房主`)
+      }
       this.broadcastSnapshot()
       if (this.stage !== 'idle' && this.stage !== 'ended') {
         this.checkHandEnded()
@@ -505,6 +534,7 @@ class TexasRoom {
       room: {
         id: this.id,
         name: this.name,
+        hostUserId: this.hostUserId,
         smallBlind: this.smallBlind,
         bigBlind: this.bigBlind,
         stage: this.stage,
@@ -559,6 +589,10 @@ rooms.set('room_master', new TexasRoom('room_master', '标准·豪客巅峰桌 �
 rooms.set('room_short_1', new TexasRoom('room_short_1', '短牌6+·热血微额桌 ⚡', 10, 20, true))
 rooms.set('room_short_pro', new TexasRoom('room_short_pro', '短牌6+·狂暴巅峰桌 🔥', 50, 100, true))
 
+// 派对游戏管理器 (你画我猜 + 谁是卧底)
+const drawManager = new DrawRoomManager()
+const undercoverManager = new UndercoverRoomManager()
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   if (req.url === '/health') {
@@ -567,22 +601,38 @@ const server = http.createServer((req, res) => {
     return
   }
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-  res.end('KKGame Texas Hold\'em Realtime Poker Server is running.')
+  res.end('KKGame Realtime Multiplayer Gaming Hub is running.')
 })
 
 const wss = new WebSocketServer({ server })
 
 wss.on('connection', (ws: WebSocket, req) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
-  const roomId = url.searchParams.get('roomId') || 'room_beginner'
-  let room = rooms.get(roomId)
+  const game = url.searchParams.get('game') || ''
+  const roomId = url.searchParams.get('roomId') || ''
+
+  // 1. 你画我猜
+  if (game === 'draw' || roomId.startsWith('draw_') || roomId.startsWith('draw')) {
+    drawManager.handleConnection(ws, url.searchParams)
+    return
+  }
+
+  // 2. 谁是卧底
+  if (game === 'undercover' || roomId.startsWith('undercover_') || roomId.startsWith('undercover')) {
+    undercoverManager.handleConnection(ws, url.searchParams)
+    return
+  }
+
+  // 3. 德州扑克 (默认)
+  const targetRoomId = roomId || 'room_beginner'
+  let room = rooms.get(targetRoomId)
   if (!room) {
     const sb = Number(url.searchParams.get('sb') || 10)
     const bb = Number(url.searchParams.get('bb') || 20)
-    const isShort = url.searchParams.get('short') === '1' || roomId.includes('short')
-    const name = url.searchParams.get('name') ? decodeURIComponent(url.searchParams.get('name')!) : (isShort ? `短牌包厢 #${roomId.slice(-4)}` : `私人包厢 #${roomId.slice(-4)}`)
-    room = new TexasRoom(roomId, name, sb, bb, isShort)
-    rooms.set(roomId, room)
+    const isShort = url.searchParams.get('short') === '1' || targetRoomId.includes('short')
+    const name = url.searchParams.get('name') ? decodeURIComponent(url.searchParams.get('name')!) : (isShort ? `短牌包厢 #${targetRoomId.slice(-4)}` : `私人包厢 #${targetRoomId.slice(-4)}`)
+    room = new TexasRoom(targetRoomId, name, sb, bb, isShort)
+    rooms.set(targetRoomId, room)
   }
   room.handleConnection(ws, url.searchParams)
 })

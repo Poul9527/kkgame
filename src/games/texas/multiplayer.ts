@@ -19,6 +19,7 @@ export interface RemoteSeat {
 export interface TexasRoomSnapshot {
   id: string
   name: string
+  hostUserId?: string
   smallBlind: number
   bigBlind: number
   stage: 'idle' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'ended'
@@ -177,6 +178,11 @@ export function useTexasMultiplayer() {
     }
   }
 
+  function startGame() {
+    if (!ws.value) return
+    ws.value.send(JSON.stringify({ type: 'start_hand' }))
+  }
+
   function disconnect() {
     if (ws.value) {
       ws.value.close()
@@ -193,6 +199,7 @@ export function useTexasMultiplayer() {
     stand,
     action,
     chat,
+    startGame,
     isConnected,
     isConnecting,
     connectionError,

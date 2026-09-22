@@ -1,482 +1,539 @@
 <template>
   <div class="draw-guess-container">
-    <!-- 顶部状态与工具栏 -->
+    <!-- 顶部 HUD 栏 -->
     <header class="hud-bar glass-panel">
       <div class="hud-left">
-        <span class="game-tag font-arcade">🎨 你画我猜 PARTY</span>
-        <div class="mode-pills">
+        <span class="game-tag font-arcade">🎨 你画我猜 · 真人对决</span>
+
+        <!-- 房间切换器 -->
+        <div class="room-selector">
           <button 
-            class="mode-pill" 
-            :class="{ active: playMode === 'draw' }"
-            @click="switchMode('draw')"
+            v-for="r in presetRooms" 
+            :key="r.id"
+            class="room-chip"
+            :class="{ active: currentRoomId === r.id }"
+            @click="switchRoom(r.id)"
           >
-            🖌️ 我来画 · 电脑猜
+            {{ r.name }}
           </button>
-          <button 
-            class="mode-pill" 
-            :class="{ active: playMode === 'guess' }"
-            @click="switchMode('guess')"
-          >
-            🕵️ 电脑画 · 我来猜
+          <button class="room-chip btn-create-chip" @click="showCreateModal = true">
+            <Plus class="w-3.5 h-3.5" />
+            <span>自建房间</span>
           </button>
         </div>
       </div>
 
       <div class="hud-center">
-        <!-- 题目或提示 -->
-        <div v-if="playMode === 'draw' && currentWord" class="secret-word-pill font-arcade">
-          <span class="lbl">请画出：</span>
-          <span class="word-text text-amber-300 font-bold">{{ currentWord.word }}</span>
-          <span class="cat-text text-cyan-300">({{ currentWord.category }})</span>
-        </div>
-        <div v-else-if="playMode === 'guess' && currentWord" class="secret-word-pill font-arcade">
-          <span class="lbl">提示：</span>
-          <span class="word-text text-amber-300 font-bold">{{ currentWord.hint }}</span>
-          <span class="cat-text text-cyan-300">[{{ currentWord.category }} · {{ currentWord.word.length }}个字]</span>
-        </div>
+        <!-- 题目或提示 (真实状态) -->
+        <template v-if="roomState?.stage === 'drawing'">
+          <!-- 如果当前我是画师，显示秘密题目 -->
+          <div v-if="multiplayer.isDrawer.value" class="secret-word-pill font-arcade drawer-view">
+            <span class="lbl">🖌️ 您是画师，请画出：</span>
+            <span class="word-text text-amber-300 font-bold">【{{ roomState.secretWord }}】</span>
+            <span class="cat-text text-cyan-300">({{ roomState.currentHint }})</span>
+          </div>
+          <!-- 如果是猜词玩家 -->
+          <div v-else class="secret-word-pill font-arcade guesser-view">
+            <span class="lbl">🎨 轮到 [{{ roomState.drawerNickname }}] 作画：</span>
+            <span class="word-text text-amber-300 font-bold">{{ roomState.currentHint }}</span>
+            <span class="cat-text text-cyan-300">({{ roomState.currentWordLength }} 个字)</span>
+          </div>
 
-        <div class="timer-badge font-arcade" :class="{ warning: timeLeft <= 10 }">
-          <Clock class="w-4 h-4" />
-          <span>{{ timeLeft }}s</span>
-        </div>
+          <div class="timer-badge font-arcade" :class="{ warning: (roomState.timeLeft || 0) <= 10 }">
+            <Clock class="w-4 h-4 animate-spin text-amber-400" />
+            <span>{{ roomState.timeLeft }}s</span>
+          </div>
+        </template>
+
+        <template v-else-if="roomState?.stage === 'round_end'">
+          <div class="round-end-pill font-arcade">
+            <span>🎉 本轮结束！正确答案是：</span>
+            <b class="text-amber-300">【{{ roomState.secretWord }}】</b>
+          </div>
+        </template>
+
+        <template v-else-if="roomState?.stage === 'game_over'">
+          <div class="game-over-pill font-arcade">
+            <span>🏆 全场对决结束！</span>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="waiting-pill font-arcade">
+            <span>⏳ 等待更多玩家入座 (满2人房主可发车)</span>
+          </div>
+        </template>
       </div>
 
       <div class="hud-right">
-        <div class="score-pill font-arcade">
-          <Trophy class="w-4 h-4 text-amber-400" />
-          <span>得分: <b class="text-amber-400">{{ score }}</b></span>
-        </div>
-        <button class="btn-tool" @click="startNewRound" title="换一题">
-          <RotateCcw class="w-4 h-4 text-cyan-400" />
-          <span>换一题</span>
+        <!-- 房主发车按钮 -->
+        <button 
+          v-if="multiplayer.isHost.value && (roomState?.stage === 'waiting' || roomState?.stage === 'game_over')"
+          class="btn-host-action font-arcade"
+          @click="handleStartGame"
+          :disabled="seatedCount < 2"
+        >
+          <Sparkles class="w-4 h-4" />
+          <span>{{ seatedCount >= 2 ? '👑 房主开始对决' : '👑 至少需2人入座' }}</span>
+        </button>
+
+        <button class="btn-tool" @click="handleCopyInvite" title="复制房间邀请">
+          <Share2 class="w-4 h-4 text-cyan-400" />
+          <span>{{ copySuccess ? '已复制！' : '邀请' }}</span>
         </button>
       </div>
     </header>
 
-    <!-- 画布与右侧常驻互动分栏 -->
+    <!-- 主竞技场：左侧画室与席位，右侧常驻聊天与竞猜流 -->
     <div class="main-arena">
-      <!-- 左侧：画板工作区 -->
+      <!-- 左侧：席位与画板主体 -->
       <div class="canvas-workspace">
+        <!-- 6 个在席真人玩家展示 (支持随时点击空座换座！) -->
+        <div class="seats-dock glass-panel">
+          <div 
+            v-for="(seat, idx) in seatsDisplay" 
+            :key="idx" 
+            class="seat-box"
+            :class="{
+              'is-empty': !seat,
+              'is-me': seat && seat.userId === authStore.currentUser?.id,
+              'is-drawer': roomState?.stage === 'drawing' && roomState?.currentDrawerIndex === idx,
+              'has-guessed': seat?.hasGuessed
+            }"
+          >
+            <!-- 席位有人 -->
+            <template v-if="seat">
+              <div class="seat-avatar-wrap">
+                <span class="seat-avatar">{{ seat.avatar }}</span>
+                <span v-if="roomState?.hostUserId === seat.userId" class="host-crown" title="房主">👑</span>
+                <span v-if="roomState?.stage === 'drawing' && roomState?.currentDrawerIndex === idx" class="drawer-brush" title="画师执笔中">🎨</span>
+                <span v-if="seat.hasGuessed" class="guessed-badge" title="已猜中">✨</span>
+              </div>
+              <div class="seat-info">
+                <div class="seat-name">
+                  {{ seat.nickname }}
+                  <span v-if="seat.userId === authStore.currentUser?.id" class="me-tag">(我)</span>
+                </div>
+                <div class="seat-score font-arcade text-amber-400">{{ seat.score }} 分</div>
+              </div>
+            </template>
+
+            <!-- 席位为空：点击直接坐下或换座 -->
+            <template v-else>
+              <button 
+                class="btn-switch-seat font-arcade" 
+                @click="handleSeatClick(idx)"
+                :title="multiplayer.mySeat.value ? '点击切换到该座位' : '入座该席位'"
+              >
+                <Plus class="w-3.5 h-3.5" />
+                <span>{{ multiplayer.mySeat.value ? '换座' : '坐下' }}</span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- 画板卡片 -->
         <div class="canvas-card glass-panel">
           <canvas 
-            ref="canvasRef"
+            ref="canvasRef" 
+            width="800" 
+            height="500" 
+            class="paint-canvas"
+            :class="{ 'is-disabled': !multiplayer.isDrawer.value }"
             @mousedown="startDrawing"
             @mousemove="draw"
             @mouseup="stopDrawing"
             @mouseleave="stopDrawing"
-            @touchstart.passive="handleTouchStart"
-            @touchmove.passive="handleTouchMove"
-            @touchend="stopDrawing"
-            class="paint-canvas"
+            @touchstart.prevent="handleTouchStart"
+            @touchmove.prevent="handleTouchMove"
+            @touchend.prevent="stopDrawing"
           ></canvas>
 
-          <!-- 猜词成功徽章展示 -->
-          <transition name="pop">
-            <div v-if="roundSuccess" class="success-overlay">
-              <div class="success-card glass-panel">
-                <div class="success-icon">🎉</div>
-                <h3 class="success-title font-arcade">猜对啦！答案：{{ currentWord?.word }}</h3>
-                <p class="success-sub font-arcade">+100 积分 · 奖励 🪙 50 金币</p>
-                <button class="btn-next-round font-arcade" @click="startNewRound">
-                  <span>下一题 ❯</span>
-                </button>
-              </div>
+          <!-- 画布覆盖提示：非画师观摩中 -->
+          <div v-if="!multiplayer.isDrawer.value && roomState?.stage === 'drawing'" class="canvas-spectate-pill font-arcade">
+            <span>👀 观摩画师作画中，请在右侧聊天框竞猜！</span>
+          </div>
+
+          <!-- 等待开局覆盖遮罩 -->
+          <div v-if="roomState?.stage === 'waiting'" class="canvas-idle-overlay">
+            <Sparkles class="w-10 h-10 text-cyan-400 mb-2 animate-bounce" />
+            <h3 class="font-arcade text-lg text-white">真人你画我猜 · 房间就绪</h3>
+            <p class="text-xs text-slate-300 mt-1">
+              {{ seatedCount >= 2 ? '玩家已就绪，等待房主点击上方【房主开始对决】！' : '点击上方空位入座，满 2 人即可发车！' }}
+            </p>
+          </div>
+
+          <!-- 画具控制栏 (仅当前画师可见可用) -->
+          <div v-if="multiplayer.isDrawer.value" class="canvas-toolbar">
+            <!-- 调色盘 -->
+            <div class="color-palette">
+              <button 
+                v-for="c in colors" 
+                :key="c" 
+                class="color-btn" 
+                :style="{ backgroundColor: c }" 
+                :class="{ active: strokeColor === c && !isEraser }" 
+                @click="selectColor(c)"
+              ></button>
             </div>
-          </transition>
+
+            <div class="divider"></div>
+
+            <!-- 画笔粗细 -->
+            <div class="size-group">
+              <button 
+                v-for="s in brushSizes" 
+                :key="s.size" 
+                class="size-btn" 
+                :class="{ active: strokeWidth === s.size && !isEraser }" 
+                @click="selectSize(s.size)"
+              >
+                <span class="size-dot" :style="{ width: s.size + 'px', height: s.size + 'px' }"></span>
+              </button>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 橡皮擦、撤销与清空 -->
+            <div class="tool-actions">
+              <button class="tool-btn" :class="{ active: isEraser }" @click="toggleEraser" title="橡皮擦">
+                <Eraser class="w-4 h-4" />
+                <span>橡皮</span>
+              </button>
+              <button class="tool-btn" @click="handleUndo" title="撤销上一步">
+                <Undo2 class="w-4 h-4" />
+                <span>撤销</span>
+              </button>
+              <button class="tool-btn danger" @click="handleClear" title="清空画板">
+                <Trash2 class="w-4 h-4" />
+                <span>清空</span>
+              </button>
+            </div>
+          </div>
         </div>
-
-        <!-- 画板底栏调色盘与工具 -->
-        <footer v-if="playMode === 'draw'" class="canvas-toolbar glass-panel">
-          <!-- 调色盘 -->
-          <div class="palette-colors">
-            <button 
-              v-for="c in colorList" 
-              :key="c"
-              class="color-dot"
-              :class="{ active: currentColor === c && !isEraser }"
-              :style="{ backgroundColor: c }"
-              @click="selectColor(c)"
-            ></button>
-          </div>
-
-          <!-- 画笔粗细 -->
-          <div class="brush-sizes">
-            <button 
-              v-for="s in [3, 6, 12, 20]" 
-              :key="s"
-              class="size-dot-btn"
-              :class="{ active: currentSize === s && !isEraser }"
-              @click="currentSize = s; isEraser = false"
-            >
-              <span class="inner-dot" :style="{ width: `${s}px`, height: `${s}px` }"></span>
-            </button>
-          </div>
-
-          <!-- 工具按钮 -->
-          <div class="tool-actions">
-            <button 
-              class="btn-canvas-tool" 
-              :class="{ active: isEraser }"
-              @click="isEraser = !isEraser"
-              title="橡皮擦"
-            >
-              <Eraser class="w-4 h-4" />
-              <span>橡皮</span>
-            </button>
-            <button class="btn-canvas-tool" @click="undoStroke" title="撤销一步">
-              <Undo2 class="w-4 h-4" />
-              <span>撤销</span>
-            </button>
-            <button class="btn-canvas-tool btn-danger" @click="clearCanvas" title="清空画板">
-              <Trash2 class="w-4 h-4" />
-              <span>清空</span>
-            </button>
-          </div>
-        </footer>
       </div>
 
-      <!-- 右侧：常驻实时猜词与弹幕互动面板 -->
-      <aside class="chat-sidebar glass-panel">
+      <!-- 右侧：常驻玩家聊天与竞猜面板 -->
+      <aside class="sidebar-chat-panel glass-panel">
         <div class="sidebar-header">
           <div class="header-tab">
             <MessageSquare class="w-4 h-4 text-cyan-400" />
-            <span class="font-arcade text-xs text-cyan-300">实时竞猜 & 互动</span>
+            <span class="font-arcade text-xs text-cyan-300">竞猜流 & 牌友聊天</span>
           </div>
-          <span class="spectator-counter font-arcade">👥 4 位牌友围观中</span>
+          <span class="conn-dot" :class="{ online: multiplayer.isConnected.value }">
+            {{ multiplayer.isConnected.value ? '● 实时' : '○ 断开' }}
+          </span>
         </div>
 
-        <div class="sidebar-body" ref="chatScrollRef">
-          <div v-for="(m, i) in messages" :key="i" class="chat-msg" :class="{ 'is-correct': m.isCorrect }">
-            <span class="msg-avatar">{{ m.avatar }}</span>
-            <div class="msg-content">
-              <div class="msg-sender font-arcade">{{ m.sender }}</div>
-              <div class="msg-text">{{ m.text }}</div>
-            </div>
+        <div class="sidebar-body" ref="logContainer">
+          <div v-for="(l, i) in multiplayer.logs.value" :key="i" class="log-item">
+            <span class="log-time font-arcade">[{{ l.time }}]</span>
+            <span v-if="l.sender" class="log-sender font-bold">{{ l.sender }}: </span>
+            <span class="log-text">{{ l.text }}</span>
           </div>
         </div>
 
-        <!-- 猜词输入框 (猜题模式或自由互动) -->
         <div class="sidebar-footer">
-          <div class="quick-tags">
-            <button 
-              v-for="q in ['好像是动物？', '画得太生动了！', '看不懂求提示', '太难了！']" 
-              :key="q"
-              class="btn-quick-tag"
-              @click="userSubmitGuess(q)"
-            >
-              {{ q }}
+          <div class="emoji-bar">
+            <button v-for="e in ['👏', '🔥', '🎨', '🚀', '😭', '🎉', '😎']" :key="e" @click="sendQuickEmoji(e)">
+              {{ e }}
             </button>
           </div>
-          <div class="guess-input-row">
+          <div class="chat-input-row">
             <input 
               v-model="guessInput" 
-              :placeholder="playMode === 'guess' ? '输入你的猜词答案...' : '发送聊天互动...'" 
-              @keyup.enter="handleUserSend"
+              :placeholder="multiplayer.isDrawer.value ? '您是画师，请勿泄题...' : '输入猜测答案或聊天...'" 
+              @keyup.enter="handleSendGuess"
             />
-            <button class="btn-send-guess font-arcade" @click="handleUserSend">
-              <span>竞猜</span>
+            <button class="btn-send-guess font-arcade" @click="handleSendGuess">
+              <span>竞猜 / 发送</span>
             </button>
           </div>
         </div>
       </aside>
     </div>
+
+    <!-- 自建房间弹窗 -->
+    <Modal v-model="showCreateModal" title="自建画猜专属包厢" width="460px">
+      <div class="create-room-box font-arcade">
+        <div class="form-group">
+          <label>包厢名称</label>
+          <input v-model="customRoomName" placeholder="例如：灵魂画手夜间局" class="custom-input" />
+        </div>
+        <div class="form-group mt-3">
+          <label>包厢房号 (ID)</label>
+          <input v-model="customRoomId" placeholder="例如：my_draw_888" class="custom-input" />
+        </div>
+        <button class="btn-arcade btn-primary w-full mt-4" @click="handleCreateRoom">
+          <span>立即开房并就任房主</span>
+        </button>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { Clock, Trophy, RotateCcw, Eraser, Undo2, Trash2, MessageSquare } from 'lucide-vue-next'
-import { sound } from '@/utils/soundEngine'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
+import { useDrawMultiplayer, type DrawStroke } from './useDrawMultiplayer'
+import { sound } from '@/utils/soundEngine'
+import Modal from '@/components/common/Modal.vue'
 import confetti from 'canvas-confetti'
+import { 
+  Clock, RotateCcw, Share2, Plus, Sparkles, MessageSquare, 
+  Eraser, Undo2, Trash2 
+} from 'lucide-vue-next'
 
-interface WordItem {
-  word: string
-  category: string
-  hint: string
-}
-
+const authStore = useAuthStore()
 const userStore = useUserStore()
-const playMode = ref<'draw' | 'guess'>('draw')
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-let ctx: CanvasRenderingContext2D | null = null
+const multiplayer = useDrawMultiplayer()
 
-const currentColor = ref('#ffffff')
-const currentSize = ref(6)
-const isEraser = ref(false)
-const isDrawing = ref(false)
-let strokeHistory: ImageData[] = []
-
-const colorList = [
-  '#ffffff', '#000000', '#ef4444', '#f97316', '#eab308', 
-  '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899', '#78350f'
-]
-
-// 丰富有趣的高频词库
-const wordsLibrary: WordItem[] = [
-  { word: '大熊猫', category: '动物', hint: '黑白相间，喜欢吃竹子' },
-  { word: '汉堡包', category: '美食', hint: '两片面包夹肉和生菜' },
-  { word: '太阳眼镜', category: '物品', hint: '夏天戴在脸上的防晒用品' },
-  { word: '皮卡丘', category: '动漫', hint: '十万伏特！黄色电气鼠' },
-  { word: '珍珠奶茶', category: '饮品', hint: '台湾特色，里面有一颗颗黑色的' },
-  { word: '西瓜', category: '水果', hint: '绿皮红瓤黑籽，夏天消暑神器' },
-  { word: '火箭', category: '航天', hint: '尾部喷火发射到太空' },
-  { word: '吉他', category: '乐器', hint: '六根弦的弹拨乐器' },
-  { word: '恐龙', category: '史前', hint: '霸王龙、三角龙的统称' },
-  { word: '小黄人', category: '电影', hint: '穿着蓝色背带裤的黄色胶囊生物' },
-  { word: '火锅', category: '美食', hint: '围着沸腾锅底涮肉涮菜' },
-  { word: '雨伞', category: '物品', hint: '下雨天撑开挡雨的' },
-  { word: '企鹅', category: '动物', hint: '南极不会飞但游泳很厉害的鸟' },
-  { word: '长颈鹿', category: '动物', hint: '脖子最长的陆地动物' },
-  { word: '闹钟', category: '日常', hint: '早上叮铃铃叫你起床' },
-  { word: '雪人', category: '冬日', hint: '堆雪堆出来的，胡萝卜做鼻子' },
-  { word: '魔术师', category: '职业', hint: '从帽子里变出鸽子的人' }
-]
-
-const currentWord = ref<WordItem | null>(null)
-const timeLeft = ref(60)
-const score = ref(0)
-const roundSuccess = ref(false)
+const currentRoomId = ref('draw_1')
+const showCreateModal = ref(false)
+const customRoomName = ref('')
+const customRoomId = ref(`draw_${Date.now().toString().slice(-4)}`)
+const copySuccess = ref(false)
 const guessInput = ref('')
-const chatScrollRef = ref<HTMLElement | null>(null)
+const logContainer = ref<HTMLElement | null>(null)
 
-let roundTimer: any = null
-let aiGuessInterval: any = null
+// 预设公共房间
+const presetRooms = [
+  { id: 'draw_1', name: '🎨 欢乐大厅 1' },
+  { id: 'draw_2', name: '🎨 灵魂画手 2' }
+]
 
-interface ChatMessage {
-  sender: string
-  avatar: string
-  text: string
-  isCorrect?: boolean
+// 画笔配置
+const colors = ['#ffffff', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899', '#000000']
+const brushSizes = [
+  { size: 3 },
+  { size: 6 },
+  { size: 12 },
+  { size: 24 }
+]
+const strokeColor = ref('#ffffff')
+const strokeWidth = ref(6)
+const isEraser = ref(false)
+
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+let isDrawing = false
+let lastX = 0
+let lastY = 0
+
+const roomState = computed(() => multiplayer.roomState.value)
+
+const seatedCount = computed(() => {
+  if (!roomState.value?.seats) return 0
+  return roomState.value.seats.filter(Boolean).length
+})
+
+const seatsDisplay = computed(() => {
+  if (!roomState.value?.seats) return Array(6).fill(null)
+  return roomState.value.seats
+})
+
+function switchRoom(roomId: string, name?: string) {
+  currentRoomId.value = roomId
+  const user = {
+    userId: authStore.currentUser?.id || `guest_${Date.now()}`,
+    nickname: authStore.currentUser?.nickname || userStore.nickname || '画友',
+    avatar: authStore.currentUser?.avatar || userStore.avatar || '🎨'
+  }
+  multiplayer.connect(roomId, user, name)
 }
 
-const messages = ref<ChatMessage[]>([
-  { sender: '系统裁判', avatar: '🤖', text: '游戏开始！请抓紧时间完成画作或进行竞猜！' }
-])
+function handleCreateRoom() {
+  const roomId = customRoomId.value.trim() || `draw_${Date.now()}`
+  const name = customRoomName.value.trim() || '自建画猜包厢'
+  showCreateModal.value = false
+  switchRoom(roomId, name)
+}
 
-const spectators = [
-  { name: '聪明小美', avatar: '👧' },
-  { name: '涂鸦阿强', avatar: '👦' },
-  { name: '推理狂客', avatar: '🕵️' }
-]
+function handleSeatClick(idx: number) {
+  if (!authStore.isLoggedIn) {
+    authStore.openAuthModal('login')
+    return
+  }
+  sound.click()
+  multiplayer.sit(idx)
+}
 
-function switchMode(mode: 'draw' | 'guess') {
-  playMode.value = mode
-  startNewRound()
+function handleStartGame() {
+  sound.victory()
+  multiplayer.startGame()
+}
+
+function handleCopyInvite() {
+  const shareUrl = `${window.location.origin}/game/draw-and-guess?room=${currentRoomId.value}`
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    copySuccess.value = true
+    setTimeout(() => { copySuccess.value = false }, 2500)
+  })
 }
 
 function selectColor(c: string) {
-  currentColor.value = c
+  strokeColor.value = c
   isEraser.value = false
 }
 
-// 初始化画布
-function initCanvas() {
+function selectSize(s: number) {
+  strokeWidth.value = s
+}
+
+function toggleEraser() {
+  isEraser.value = !isEraser.value
+}
+
+// 画布操作
+function getCanvasCoords(e: MouseEvent) {
   const canvas = canvasRef.value
-  if (!canvas) return
+  if (!canvas) return { x: 0, y: 0 }
   const rect = canvas.getBoundingClientRect()
-  canvas.width = rect.width * window.devicePixelRatio || 720
-  canvas.height = rect.height * window.devicePixelRatio || 480
-  ctx = canvas.getContext('2d')
-  if (ctx) {
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
-    ctx.fillStyle = '#1e293b'
-    ctx.fillRect(0, 0, rect.width, rect.height)
-    saveState()
+  const scaleX = canvas.width / rect.width
+  const scaleY = canvas.height / rect.height
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
   }
 }
 
-function saveState() {
-  if (!ctx || !canvasRef.value) return
-  strokeHistory.push(ctx.getImageData(0, 0, canvasRef.value.width, canvasRef.value.height))
-  if (strokeHistory.length > 20) strokeHistory.shift()
-}
-
-function undoStroke() {
-  if (!ctx || !canvasRef.value || strokeHistory.length <= 1) return
-  strokeHistory.pop()
-  const previous = strokeHistory[strokeHistory.length - 1]
-  ctx.putImageData(previous, 0, 0)
-  sound.click()
-}
-
-function clearCanvas() {
-  if (!ctx || !canvasRef.value) return
-  const rect = canvasRef.value.getBoundingClientRect()
-  ctx.fillStyle = '#1e293b'
-  ctx.fillRect(0, 0, rect.width, rect.height)
-  saveState()
-  sound.click()
-}
-
-// 绘图事件处理
 function startDrawing(e: MouseEvent) {
-  if (playMode.value !== 'draw' || roundSuccess.value) return
-  isDrawing.value = true
-  const { x, y } = getCanvasPos(e.clientX, e.clientY)
-  if (!ctx) return
-  ctx.beginPath()
-  ctx.moveTo(x, y)
+  if (!multiplayer.isDrawer.value) return
+  isDrawing = true
+  const { x, y } = getCanvasCoords(e)
+  lastX = x
+  lastY = y
+
+  const stroke: DrawStroke = {
+    x1: x,
+    y1: y,
+    x2: x,
+    y2: y,
+    color: strokeColor.value,
+    size: strokeWidth.value,
+    isEraser: isEraser.value,
+    isNew: true
+  }
+  renderStroke(stroke)
+  multiplayer.sendStroke(stroke)
 }
 
 function draw(e: MouseEvent) {
-  if (!isDrawing.value || !ctx || playMode.value !== 'draw') return
-  const { x, y } = getCanvasPos(e.clientX, e.clientY)
-  ctx.lineTo(x, y)
-  ctx.strokeStyle = isEraser.value ? '#1e293b' : currentColor.value
-  ctx.lineWidth = isEraser.value ? 24 : currentSize.value
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.stroke()
+  if (!isDrawing || !multiplayer.isDrawer.value) return
+  const { x, y } = getCanvasCoords(e)
+
+  const stroke: DrawStroke = {
+    x1: lastX,
+    y1: lastY,
+    x2: x,
+    y2: y,
+    color: strokeColor.value,
+    size: strokeWidth.value,
+    isEraser: isEraser.value,
+    isNew: false
+  }
+  renderStroke(stroke)
+  multiplayer.sendStroke(stroke)
+
+  lastX = x
+  lastY = y
 }
 
 function stopDrawing() {
-  if (isDrawing.value) {
-    isDrawing.value = false
-    saveState()
-  }
+  isDrawing = false
 }
 
 function handleTouchStart(e: TouchEvent) {
-  if (e.touches.length === 0) return
+  if (!multiplayer.isDrawer.value || e.touches.length === 0) return
   const t = e.touches[0]
   startDrawing({ clientX: t.clientX, clientY: t.clientY } as MouseEvent)
 }
 
 function handleTouchMove(e: TouchEvent) {
-  if (e.touches.length === 0) return
+  if (!multiplayer.isDrawer.value || e.touches.length === 0) return
   const t = e.touches[0]
   draw({ clientX: t.clientX, clientY: t.clientY } as MouseEvent)
 }
 
-function getCanvasPos(clientX: number, clientY: number) {
-  if (!canvasRef.value) return { x: 0, y: 0 }
-  const rect = canvasRef.value.getBoundingClientRect()
-  return {
-    x: clientX - rect.left,
-    y: clientY - rect.top
-  }
-}
+function renderStroke(s: DrawStroke) {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
 
-// 模拟电脑智能竞猜逻辑
-function triggerAIGuessing() {
-  clearInterval(aiGuessInterval)
-  let attempts = 0
-  const wrongGuesses = ['苹果？', '圆圈', '小狗吗', '好像是汉堡', '杯子？', '汽车？', '太阳', '某种水果？']
-
-  aiGuessInterval = setInterval(() => {
-    if (roundSuccess.value || !currentWord.value) return
-    attempts++
-    const bot = spectators[Math.floor(Math.random() * spectators.length)]
-
-    if (attempts >= 4 && Math.random() < 0.6) {
-      // AI 猜中！
-      addMessage(bot.name, bot.avatar, currentWord.value.word, true)
-      handleRoundSuccess(bot.name)
-    } else {
-      const wrong = wrongGuesses[Math.floor(Math.random() * wrongGuesses.length)]
-      addMessage(bot.name, bot.avatar, wrong)
-    }
-  }, 7000)
-}
-
-// 模拟电脑绘制演示
-function simulateAIDrawing() {
-  clearCanvas()
-  if (!ctx || !canvasRef.value) return
-  const rect = canvasRef.value.getBoundingClientRect()
-  const cx = rect.width / 2
-  const cy = rect.height / 2
-
-  // 简易绘制一个有趣剪影
   ctx.beginPath()
-  ctx.arc(cx, cy, 50, 0, Math.PI * 2)
-  ctx.fillStyle = '#38bdf8'
-  ctx.fill()
-  ctx.strokeStyle = '#fff'
-  ctx.lineWidth = 4
+  ctx.strokeStyle = s.isEraser ? '#0f172a' : s.color
+  ctx.lineWidth = s.size
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.moveTo(s.x1, s.y1)
+  ctx.lineTo(s.x2, s.y2)
   ctx.stroke()
 }
 
-// 用户发送猜词
-function handleUserSend() {
+function clearLocalCanvas() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.fillStyle = '#0f172a'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+}
+
+function handleClear() {
+  clearLocalCanvas()
+  multiplayer.sendClear()
+}
+
+function handleUndo() {
+  multiplayer.sendUndo()
+}
+
+function handleSendGuess() {
   if (!guessInput.value.trim()) return
-  userSubmitGuess(guessInput.value.trim())
+  multiplayer.chat(guessInput.value)
   guessInput.value = ''
 }
 
-function userSubmitGuess(text: string) {
-  if (roundSuccess.value || !currentWord.value) return
-  addMessage(userStore.nickname || '我', userStore.avatar || '😎', text)
+function sendQuickEmoji(e: string) {
+  multiplayer.chat(e)
+}
 
-  if (text.trim() === currentWord.value.word) {
-    addMessage('系统裁判', '🎉', `恭喜 [${userStore.nickname || '我'}] 一语中的，完全正确！`, true)
-    handleRoundSuccess(userStore.nickname || '我')
-  } else {
-    sound.click()
+// 监听日志滚动
+watch(() => multiplayer.logs.value.length, async () => {
+  await nextTick()
+  if (logContainer.value) {
+    logContainer.value.scrollTop = logContainer.value.scrollHeight
   }
-}
+})
 
-function handleRoundSuccess(winnerName: string) {
-  roundSuccess.value = true
-  clearInterval(roundTimer)
-  clearInterval(aiGuessInterval)
-  score.value += 100
-  userStore.addCoins(50)
-  sound.victory()
-  confetti({ particleCount: 80, spread: 70 })
-}
-
-function addMessage(sender: string, avatar: string, text: string, isCorrect = false) {
-  messages.value.push({ sender, avatar, text, isCorrect })
-  if (messages.value.length > 50) messages.value.shift()
-  nextTick(() => {
-    if (chatScrollRef.value) {
-      chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
-    }
-  })
-}
-
-// 开启新一轮
-function startNewRound() {
-  roundSuccess.value = false
-  clearInterval(roundTimer)
-  clearInterval(aiGuessInterval)
-  timeLeft.value = 60
-  strokeHistory = []
-
-  const randomIndex = Math.floor(Math.random() * wordsLibrary.length)
-  currentWord.value = wordsLibrary[randomIndex]
-  clearCanvas()
-
-  addMessage('系统裁判', '📢', `新题目已就位！类别：【${currentWord.value.category}】，限时 60 秒！`)
-
-  if (playMode.value === 'draw') {
-    triggerAIGuessing()
-  } else {
-    simulateAIDrawing()
+// 监听阶段特效
+watch(() => roomState.value?.stage, (newStage) => {
+  if (newStage === 'round_end' || newStage === 'game_over') {
+    confetti({ particleCount: 60, spread: 70 })
+    sound.victory()
   }
-
-  roundTimer = setInterval(() => {
-    if (timeLeft.value > 0) {
-      timeLeft.value--
-    } else {
-      clearInterval(roundTimer)
-      clearInterval(aiGuessInterval)
-      addMessage('系统裁判', '⏰', `时间到！正确答案是：【${currentWord.value?.word}】`)
-      sound.gameover()
-    }
-  }, 1000)
-}
+})
 
 onMounted(() => {
-  initCanvas()
-  startNewRound()
+  clearLocalCanvas()
+  multiplayer.onRemoteStroke((stroke) => {
+    renderStroke(stroke)
+  })
+  multiplayer.onRemoteClear(() => {
+    clearLocalCanvas()
+  })
+  multiplayer.onRemoteHistory((strokes) => {
+    clearLocalCanvas()
+    strokes.forEach(s => renderStroke(s))
+  })
+
+  switchRoom('draw_1')
 })
 
 onUnmounted(() => {
-  clearInterval(roundTimer)
-  clearInterval(aiGuessInterval)
+  multiplayer.disconnect()
 })
 </script>
 
@@ -486,7 +543,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+  background: radial-gradient(circle at center, #0b1329 0%, #030712 100%);
   user-select: none;
   overflow: hidden;
 }
@@ -498,6 +555,7 @@ onUnmounted(() => {
   padding: 8px 16px;
   background: rgba(15, 23, 42, 0.9);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 12px;
 }
 
 .hud-left {
@@ -508,82 +566,106 @@ onUnmounted(() => {
 
 .game-tag {
   font-size: 13px;
-  font-weight: 900;
-  color: #ec4899;
+  font-weight: bold;
+  color: #38bdf8;
 }
 
-.mode-pills {
+.room-selector {
   display: flex;
   gap: 6px;
 }
 
-.mode-pill {
+.room-chip {
   padding: 4px 10px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
+  color: #cbd5e1;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.mode-pill.active {
-  background: rgba(236, 72, 153, 0.2);
-  border-color: #ec4899;
+.room-chip.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #fff;
+}
+
+.btn-create-chip {
+  background: rgba(236, 72, 153, 0.15);
+  border-color: rgba(236, 72, 153, 0.4);
   color: #f472b6;
 }
 
 .hud-center {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
-.secret-word-pill {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(245, 158, 11, 0.4);
+.secret-word-pill, .round-end-pill, .waiting-pill, .game-over-pill {
   padding: 4px 14px;
-  border-radius: 14px;
-  font-size: 13px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 12px;
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 6px;
+}
+
+.secret-word-pill.drawer-view {
+  border-color: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
 }
 
 .timer-badge {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 4px 10px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 12px;
-  color: #38bdf8;
+  color: #fbbf24;
   font-size: 12px;
+  font-weight: bold;
 }
 
 .timer-badge.warning {
-  color: #ef4444;
+  background: rgba(239, 68, 68, 0.2);
   border-color: #ef4444;
+  color: #f87171;
   animation: pulse 1s infinite;
 }
 
 .hud-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.score-pill {
+.btn-host-action {
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: 1px solid #fef08a;
+  color: #1e1b4b;
+  font-weight: 800;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-size: 12px;
+  gap: 4px;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.btn-host-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-tool {
@@ -592,268 +674,398 @@ onUnmounted(() => {
   gap: 4px;
   padding: 5px 10px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #cbd5e1;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
-/* 主竞技场 */
+/* 主竞技场分栏 */
 .main-arena {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .canvas-workspace {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: 10px;
   gap: 10px;
   overflow: hidden;
 }
 
+/* 6 个席位栏 */
+.seats-dock {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.seat-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.seat-box.is-me {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.seat-box.is-drawer {
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.seat-box.has-guessed {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: #22c55e;
+}
+
+.seat-avatar-wrap {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.host-crown {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  font-size: 12px;
+}
+
+.drawer-brush {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  font-size: 11px;
+}
+
+.guessed-badge {
+  position: absolute;
+  top: -6px;
+  left: -4px;
+  font-size: 11px;
+}
+
+.seat-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.seat-name {
+  font-size: 11px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.me-tag {
+  color: #38bdf8;
+  font-size: 10px;
+}
+
+.seat-score {
+  font-size: 10px;
+}
+
+.btn-switch-seat {
+  width: 100%;
+  height: 100%;
+  min-height: 36px;
+  background: transparent;
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  color: #64748b;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  transition: all 0.2s;
+}
+
+.btn-switch-seat:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+/* 画板卡片 */
 .canvas-card {
   flex: 1;
   position: relative;
-  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 .paint-canvas {
   width: 100%;
-  height: 100%;
-  display: block;
+  max-width: 800px;
+  height: 480px;
+  background: #0f172a;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
   cursor: crosshair;
 }
 
+.paint-canvas.is-disabled {
+  cursor: default;
+}
+
+.canvas-spectate-pill {
+  position: absolute;
+  top: 20px;
+  padding: 4px 14px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 11px;
+}
+
+.canvas-idle-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+/* 画具工具栏 */
 .canvas-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  border-radius: 10px;
+  gap: 12px;
+  margin-top: 8px;
+  background: rgba(15, 23, 42, 0.8);
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.palette-colors {
+.color-palette {
   display: flex;
-  gap: 6px;
+  gap: 5px;
 }
 
-.color-dot {
-  width: 22px;
-  height: 22px;
+.color-btn {
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid transparent;
   cursor: pointer;
   transition: transform 0.15s;
 }
 
-.color-dot.active {
-  transform: scale(1.25);
+.color-btn.active {
+  transform: scale(1.3);
   border-color: #fff;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
 
-.brush-sizes {
+.divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.size-group {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 6px;
 }
 
-.size-dot-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+.size-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
 }
 
-.size-dot-btn.active {
-  background: rgba(56, 189, 248, 0.25);
+.size-btn.active {
   border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.2);
 }
 
-.inner-dot {
-  background: #fff;
+.size-dot {
   border-radius: 50%;
+  background: #cbd5e1;
 }
 
 .tool-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
-.btn-canvas-tool {
+.tool-actions .tool-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cbd5e1;
-  font-size: 11px;
+  gap: 3px;
   cursor: pointer;
 }
 
-.btn-canvas-tool.active {
-  background: rgba(245, 158, 11, 0.25);
-  border-color: #f59e0b;
-  color: #fbbf24;
+.tool-actions .tool-btn.active {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: #38bdf8;
+  color: #fff;
 }
 
-.btn-canvas-tool.btn-danger {
-  color: #fda4af;
-  border-color: rgba(244, 63, 94, 0.3);
+.tool-actions .tool-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: #ef4444;
+  color: #fca5a5;
 }
 
-/* 侧边常驻聊天竞猜 */
-.chat-sidebar {
-  width: 300px;
+/* 右侧常驻面板 */
+.sidebar-chat-panel {
+  width: 290px;
   display: flex;
   flex-direction: column;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.8);
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.header-tab { display: flex; align-items: center; gap: 6px; }
-.spectator-counter { font-size: 10px; color: #94a3b8; }
+.header-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conn-dot {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.conn-dot.online {
+  color: #34d399;
+}
 
 .sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.chat-msg {
-  display: flex;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: 12px;
-}
-
-.chat-msg.is-correct {
-  background: rgba(16, 185, 129, 0.2);
-  border: 1px solid rgba(16, 185, 129, 0.4);
-}
-
-.msg-avatar { font-size: 16px; }
-.msg-sender { font-size: 10px; color: #94a3b8; }
-.msg-text { color: #f1f5f9; }
-
-.sidebar-footer {
-  padding: 8px 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  font-size: 12px;
 }
 
-.quick-tags {
+.log-time { color: #64748b; font-size: 10px; margin-right: 4px; }
+.log-sender { color: #38bdf8; }
+.log-text { color: #cbd5e1; line-height: 1.3; }
+
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.emoji-bar {
   display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  gap: 5px;
+  margin-bottom: 6px;
 }
 
-.btn-quick-tag {
-  white-space: nowrap;
-  font-size: 10px;
+.emoji-bar button {
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
-  padding: 2px 6px;
+  border: none;
+  font-size: 14px;
+  padding: 2px 5px;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.guess-input-row {
+.chat-input-row {
   display: flex;
-  gap: 6px;
+  gap: 5px;
 }
 
-.guess-input-row input {
+.chat-input-row input {
   flex: 1;
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   color: #fff;
   font-size: 12px;
   outline: none;
 }
 
-.guess-input-row input:focus {
-  border-color: #ec4899;
+.chat-input-row input:focus {
+  border-color: #38bdf8;
 }
 
 .btn-send-guess {
-  background: linear-gradient(135deg, #ec4899, #be185d);
-  border: none;
+  background: #ec4899;
   color: #fff;
-  padding: 6px 14px;
+  border: none;
+  padding: 6px 10px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: bold;
   cursor: pointer;
 }
 
-/* 成功弹窗 */
-.success-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
-  z-index: 10;
+.btn-send-guess:hover {
+  background: #db2777;
 }
 
-.success-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 24px 32px;
-  border-radius: 16px;
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-}
-
-.success-icon { font-size: 40px; }
-.success-title { font-size: 18px; color: #facc15; }
-.success-sub { font-size: 12px; color: #94a3b8; }
-
-.btn-next-round {
-  margin-top: 8px;
-  background: linear-gradient(135deg, #10b981, #059669);
-  border: none;
+/* 建房弹窗 */
+.custom-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
   color: #fff;
-  padding: 8px 20px;
-  border-radius: 8px;
-  font-weight: bold;
-  cursor: pointer;
+  font-size: 13px;
+  margin-top: 4px;
 }
 </style>
