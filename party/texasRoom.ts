@@ -1,5 +1,5 @@
 import type * as Party from 'partykit/server'
-import { db } from '../server/db/client'
+import { createClient, type Client } from '@libsql/client/web'
 
 export interface Card {
   suit: 'hearts' | 'diamonds' | 'clubs' | 'spades'
@@ -441,13 +441,23 @@ export default class TexasRoom implements Party.Server {
     this.room.broadcast(JSON.stringify({ type: 'announcement', text }))
   }
 
+  private getDb(): Client | null {
+    const url = (this.room.env.TURSO_DATABASE_URL as string) || (typeof process !== 'undefined' ? process.env?.TURSO_DATABASE_URL : undefined)
+    const authToken = (this.room.env.TURSO_AUTH_TOKEN as string) || (typeof process !== 'undefined' ? process.env?.TURSO_AUTH_TOKEN : undefined)
+    if (!url) return null
+    return createClient({ url, authToken })
+  }
+
   // 异步将输赢结算写入 Turso 数据库
   private async syncWalletToDb(userId: string, deltaCoins: number, type: string) {
     try {
-      await db.execute({
-        sql: `UPDATE wallets SET coins = coins + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-        args: [deltaCoins, userId]
-      })
+      const client = this.getDb()
+      if (client) {
+        await client.execute({
+          sql: `UPDATE wallets SET coins = coins + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+          args: [deltaCoins, userId]
+        })
+      }
     } catch (e) {
       console.error('Failed to sync chips to Turso DB:', e)
     }

@@ -1,7 +1,35 @@
 <template>
   <div class="texas-container">
-    <!-- 顶部状态栏 -->
-    <div class="game-dashboard glass-panel">
+    <!-- 顶部玩法模式切换栏 -->
+    <div class="texas-mode-bar glass-panel">
+      <div class="mode-tabs">
+        <button 
+          class="mode-tab" 
+          :class="{ active: playMode === 'multiplayer' }"
+          @click="playMode = 'multiplayer'"
+        >
+          <Users class="w-4 h-4 text-cyan-400" />
+          <span>🌐 多人在线对决 (真人联网)</span>
+          <span class="live-pill">实时联机</span>
+        </button>
+        <button 
+          class="mode-tab" 
+          :class="{ active: playMode === 'single' }"
+          @click="playMode = 'single'"
+        >
+          <Bot class="w-4 h-4 text-emerald-400" />
+          <span>🤖 单机人机练手 (离线AI)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 多人在线模式 -->
+    <MultiplayerTexas v-if="playMode === 'multiplayer'" />
+
+    <!-- 单机人机练习模式 -->
+    <div v-else class="single-player-view">
+      <!-- 顶部状态栏 -->
+      <div class="game-dashboard glass-panel">
       <div class="stat-card">
         <span class="stat-label">总底池</span>
         <span class="stat-value font-arcade text-amber-400">🪙 {{ pot }}</span>
@@ -455,12 +483,16 @@
         </div>
       </template>
     </Modal>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { Play, Coins, ShieldAlert, Flame, Loader2, Trophy, AlertCircle, Eye, Crown } from 'lucide-vue-next'
+import { Play, Coins, ShieldAlert, Flame, Loader2, Trophy, AlertCircle, Eye, Crown, Users, Bot } from 'lucide-vue-next'
+import MultiplayerTexas from './MultiplayerTexas.vue'
+
+const playMode = ref<'multiplayer' | 'single'>('multiplayer')
 import type { Card, TexasPlayer, TexasStage, EvaluatedTexasHand } from './types'
 import { 
   createDeck, shuffleDeck, evaluateBest5OfCards, compareTexasHands, 
@@ -1108,6 +1140,68 @@ onUnmounted(() => {
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
+}
+
+.texas-mode-bar {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 14px;
+}
+
+.mode-tabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  border-radius: 10px;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.mode-tab:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode-tab.active {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(59, 130, 246, 0.25));
+  color: #38bdf8;
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+}
+
+.live-pill {
+  font-size: 10px;
+  background: #ef4444;
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 800;
+  animation: pulse 1.5s infinite;
+}
+
+.single-player-view {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 
 .game-dashboard {
