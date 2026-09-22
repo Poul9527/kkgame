@@ -37,17 +37,21 @@ export default async function handler(req: any, res: any) {
     const finalAvatar = avatar || '🎮'
     const initialCoins = 1000 // 注册赠送 1000 体验金币
 
-    // 开启事务或连续执行入库
-    await db.executeMultiple(`
-      INSERT INTO users (id, username, password_hash, nickname, avatar)
-      VALUES ('${userId}', '${username.trim().toLowerCase()}', '${pwdHash}', '${finalNickname}', '${finalAvatar}');
-
-      INSERT INTO wallets (id, user_id, coins)
-      VALUES ('${walletId}', '${userId}', ${initialCoins});
-
-      INSERT INTO wallet_transactions (id, user_id, type, amount, balance_after, note)
-      VALUES ('tx_${crypto.randomUUID().replace(/-/g, '')}', '${userId}', 'signup_bonus', ${initialCoins}, ${initialCoins}, '新用户注册启航礼金');
-    `)
+    // 开启批处理事务安全写入
+    await db.batch([
+      {
+        sql: 'INSERT INTO users (id, username, password_hash, nickname, avatar) VALUES (?, ?, ?, ?, ?)',
+        args: [userId, username.trim().toLowerCase(), pwdHash, finalNickname, finalAvatar]
+      },
+      {
+        sql: 'INSERT INTO wallets (id, user_id, coins) VALUES (?, ?, ?)',
+        args: [walletId, userId, initialCoins]
+      },
+      {
+        sql: 'INSERT INTO wallet_transactions (id, user_id, type, amount, balance_after, note) VALUES (?, ?, ?, ?, ?, ?)',
+        args: ['tx_' + crypto.randomUUID().replace(/-/g, ''), userId, 'signup_bonus', initialCoins, initialCoins, '新用户注册启航礼金']
+      }
+    ], 'write')
 
     const token = signToken({
       userId,

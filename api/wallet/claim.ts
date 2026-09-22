@@ -38,11 +38,16 @@ export default async function handler(req: any, res: any) {
     const grantAmount = 300
     const newBalance = currentCoins + grantAmount
 
-    await db.executeMultiple(`
-      UPDATE wallets SET coins = ${newBalance}, updated_at = CURRENT_TIMESTAMP WHERE user_id = '${payload.userId}';
-      INSERT INTO wallet_transactions (id, user_id, type, amount, balance_after, note)
-      VALUES ('tx_${crypto.randomUUID().replace(/-/g, '')}', '${payload.userId}', 'daily_relief', ${grantAmount}, ${newBalance}, '签到与破产救济补给');
-    `)
+    await db.batch([
+      {
+        sql: 'UPDATE wallets SET coins = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+        args: [newBalance, payload.userId]
+      },
+      {
+        sql: 'INSERT INTO wallet_transactions (id, user_id, type, amount, balance_after, note) VALUES (?, ?, ?, ?, ?, ?)',
+        args: ['tx_' + crypto.randomUUID().replace(/-/g, ''), payload.userId, 'daily_relief', grantAmount, newBalance, '签到与破产救济补给']
+      }
+    ], 'write')
 
     return jsonResponse(res, 200, {
       ok: true,

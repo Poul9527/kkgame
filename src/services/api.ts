@@ -23,6 +23,21 @@ const getHeaders = (token?: string) => {
   return headers
 }
 
+const parseResponse = async (res: Response): Promise<ApiResponse> => {
+  const text = await res.text()
+  try {
+    return JSON.parse(text)
+  } catch {
+    if (!res.ok) {
+      if (text.includes('A server error') || res.status >= 500) {
+        return { ok: false, error: '云端数据库连接中，请配置 Turso 数据库 URL 或稍后重试' }
+      }
+      return { ok: false, error: `请求失败 (${res.status}): ${text.slice(0, 80)}` }
+    }
+    return { ok: false, error: '服务器返回异常' }
+  }
+}
+
 export const api = {
   // 用户注册
   async register(data: { username: string; password: string; nickname?: string; avatar?: string }): Promise<ApiResponse> {
@@ -32,7 +47,7 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify(data)
       })
-      return await res.json()
+      return await parseResponse(res)
     } catch (e: any) {
       return { ok: false, error: e.message || '网络连接超时' }
     }
@@ -46,7 +61,7 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify(data)
       })
-      return await res.json()
+      return await parseResponse(res)
     } catch (e: any) {
       return { ok: false, error: e.message || '网络连接超时' }
     }
@@ -59,7 +74,7 @@ export const api = {
         method: 'GET',
         headers: getHeaders()
       })
-      return await res.json()
+      return await parseResponse(res)
     } catch (e: any) {
       return { ok: false, error: e.message }
     }
@@ -72,7 +87,7 @@ export const api = {
         method: 'POST',
         headers: getHeaders()
       })
-      return await res.json()
+      return await parseResponse(res)
     } catch (e: any) {
       return { ok: false, error: e.message }
     }

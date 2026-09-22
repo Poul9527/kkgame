@@ -1,13 +1,23 @@
 import { createClient, type Client } from '@libsql/client'
 
-// 环境变量优先使用 Turso 远端 URL，未配置时自动回退为本地 sqlite 数据库文件
-const url = process.env.TURSO_DATABASE_URL || 'file:local.db'
-const authToken = process.env.TURSO_AUTH_TOKEN || undefined
+import path from 'path'
+import os from 'os'
 
-export const db: Client = createClient({
-  url,
-  authToken
-})
+// 环境变量优先使用 Turso 远端 URL，未配置时自动回退为 /tmp 可写临时数据库文件
+const getDbConfig = () => {
+  if (process.env.TURSO_DATABASE_URL) {
+    return {
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN || undefined
+    }
+  }
+  const tmpPath = path.join(os.tmpdir(), 'kkgame_local.db').replace(/\\/g, '/')
+  return {
+    url: `file:${tmpPath}`
+  }
+}
+
+export const db: Client = createClient(getDbConfig())
 
 let isInitialized = false
 
