@@ -61,6 +61,12 @@
           <span>{{ copySuccess ? '已复制！' : '邀请好友' }}</span>
         </button>
 
+        <!-- 补充带入 -->
+        <button v-if="multiplayer.mySeat.value" class="btn-hud btn-rebuy" @click="handleRebuyClick" title="补充牌桌筹码">
+          <Coins class="w-3.5 h-3.5 text-amber-400" />
+          <span>补充筹码</span>
+        </button>
+
         <!-- 离座观战 -->
         <button v-if="multiplayer.mySeat.value" class="btn-hud btn-stand" @click="multiplayer.stand">
           <LogOut class="w-3.5 h-3.5 text-rose-400" />
@@ -264,11 +270,12 @@
             >
               <Coins class="w-4 h-4" />
               <span v-if="multiplayer.canCheck.value">过牌 (Check)</span>
+              <span v-else-if="multiplayer.callAmount.value >= (multiplayer.mySeat.value?.chips || 0)">全下跟注 🪙 {{ multiplayer.mySeat.value?.chips }}</span>
               <span v-else>跟注 🪙 {{ multiplayer.callAmount.value }}</span>
             </button>
 
             <!-- 加注交互控制组 -->
-            <div class="raise-control-cluster">
+            <div v-if="canRaise" class="raise-control-cluster">
               <div class="raise-quick-row">
                 <button class="btn-quick-chip" @click="setRaiseMultiplier(2)">2BB</button>
                 <button class="btn-quick-chip" @click="setRaiseMultiplier(3)">3BB</button>
@@ -300,7 +307,15 @@
             </button>
           </div>
 
-          <!-- 场景 C：已坐下，处于等待或结束准备阶段 -->
+          <!-- 场景 C：全场 All-In 自动发牌推进阶段 -->
+          <div v-else-if="roomState?.activeSeatIndex === -1 && roomState?.stage !== 'idle' && roomState?.stage !== 'ended'" class="console-waiting">
+            <Flame class="w-5 h-5 animate-pulse text-amber-400" />
+            <span class="text-amber-300 font-arcade">
+              🔥 全场进入 ALL-IN 决战阶段！系统正在自动推进发牌...
+            </span>
+          </div>
+
+          <!-- 场景 D：已坐下，处于等待或结束准备阶段 -->
           <div v-else-if="roomState?.stage === 'idle' || roomState?.stage === 'ended'" class="console-waiting">
             <template v-if="roomState?.hostUserId === authStore.currentUser?.id && seatedCount >= 2">
               <span class="text-amber-300 font-arcade text-sm">👑 您是房主，当前已有 {{ seatedCount }} 人入座</span>
@@ -314,7 +329,7 @@
             </span>
           </div>
 
-          <!-- 场景 D：已坐下但未轮到我 -->
+          <!-- 场景 E：已坐下但未轮到我 -->
           <div v-else class="console-waiting">
             <Loader2 class="w-5 h-5 animate-spin text-cyan-400" />
             <span class="text-slate-300 font-arcade">
@@ -388,6 +403,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
 import { useTexasMultiplayer } from './multiplayer'
+import { sound } from '@/utils/soundEngine'
 import { getRankDisplay, getSuitSymbol, getSuitColor } from './engine'
 import { 
   ChevronLeft, Share2, Check, Copy, LogOut, MessageSquare, Plus, 
@@ -459,26 +475,40 @@ const minRaiseAmount = computed(() => {
 })
 
 const maxRaiseAmount = computed(() => {
-  return multiplayer.mySeat.value?.chips || 1000
+  const myChips = multiplayer.mySeat.value?.chips || 0
+  const curRound = multiplayer.mySeat.value?.currentRoundBet || 0
+  return curRound + myChips
+})
+
+const canRaise = computed(() => {
+  return maxRaiseAmount.value >= minRaiseAmount.value
 })
 
 const customRaiseAmount = ref(40)
 
 // 轮到玩家行动时重置加注滑动条默认值
 watch(() => multiplayer.isMyTurn.value, (isTurn) => {
-  if (isTurn) {
-    customRaiseAmount.value = Math.max(minRaiseAmount.value, currentBb.value * 2)
+  if (isTurn && canRaise.value) {
+    customRaiseAmount.value = Math.max(minRaiseAmount.value, Math.min(maxRaiseAmount.value, currentBb.value * 2))
   }
 })
 
 function setRaiseMultiplier(bbMultiplier: number) {
-  customRaiseAmount.value = Math.min(maxRaiseAmount.value, currentBb.value * bbMultiplier)
+  if (!canRaise.value) return
+  customRaiseAmount.value = Math.max(minRaiseAmount.value, Math.min(maxRaiseAmount.value, currentBb.value * bbMultiplier))
 }
 
 function setRaisePotFraction(fraction: number) {
+  if (!canRaise.value) return
   const pot = roomState.value?.pot || currentBb.value * 2
   const target = Math.max(minRaiseAmount.value, Math.floor(pot * fraction))
   customRaiseAmount.value = Math.min(maxRaiseAmount.value, target)
+}
+
+function handleRebuyClick() {
+  sound.click()
+  const reload = currentBb.value * 25
+  multiplayer.rebuy(reload)
 }
 
 // 复制邀请链接
@@ -768,6 +798,12 @@ onUnmounted(() => {
   background: rgba(16, 185, 129, 0.15);
   border-color: rgba(16, 185, 129, 0.4);
   color: #6ee7b7;
+}
+
+.btn-rebuy {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fde047;
 }
 
 .btn-stand {

@@ -85,6 +85,15 @@ class TexasRoom {
   public handleConnection(ws: WebSocket, query: URLSearchParams) {
     this.clients.add(ws)
 
+    const queryUserId = query.get('userId')
+    if (queryUserId) {
+      const existing = this.seats.find(s => s && s.userId === queryUserId)
+      if (existing) {
+        existing.ws = ws
+        this.addLog(`⚡ [${existing.nickname}] 重新连线牌桌`)
+      }
+    }
+
     // 建立新连接时发送房间快照
     this.sendSnapshot(ws)
 
@@ -97,6 +106,9 @@ class TexasRoom {
             break
           case 'stand':
             this.handleStandUp(ws)
+            break
+          case 'rebuy':
+            this.handleRebuy(ws, msg)
             break
           case 'action':
             this.handlePlayerAction(ws, msg)
@@ -118,22 +130,36 @@ class TexasRoom {
       const idx = this.seats.findIndex(s => s && s.ws === ws)
       if (idx !== -1) {
         const p = this.seats[idx]!
-        this.addLog(`玩家 [${p.nickname}] 离开了连接`)
-        if (p.userId === this.hostUserId) {
-          const next = this.seats.find(s => s && s.userId !== p.userId)
-          this.hostUserId = next ? next.userId : ''
-          if (next) this.addLog(`👑 [${next.nickname}] 成为新房主`)
-        }
+        p.ws = undefined
+        this.addLog(`🔌 玩家 [${p.nickname}] 网络连接暂时断开`)
         if (this.stage === 'idle' || this.stage === 'ended') {
           this.seats[idx] = null
+          if (p.userId === this.hostUserId) {
+            const next = this.seats.find(Boolean)
+            this.hostUserId = next ? next.userId : ''
+            if (next) this.addLog(`👑 [${next.nickname}] 成为新房主`)
+          }
           this.broadcastSnapshot()
-        } else {
-          p.isFolded = true
-          p.ws = undefined
-          this.checkBettingRoundComplete()
         }
       }
     })
+  }
+
+  private handleRebuy(ws: WebSocket, msg: { amount?: number }) {
+    const p = this.seats.find(s => s && s.ws === ws)
+    if (!p) return
+    const addAmount = Math.max(this.bigBlind * 10, msg.amount || (this.bigBlind * 25))
+    p.chips += addAmount
+    p.isFolded = false
+    p.isAllIn = false
+    this.addLog(`🪙 [${p.nickname}] 补充带入 🪙${addAmount} 筹码 (现有: 🪙${p.chips})`)
+    this.broadcastSnapshot()
+    if (this.stage === 'idle' || this.stage === 'ended') {
+      const seatedCount = this.seats.filter(Boolean).length
+      if (seatedCount >= 2) {
+        setTimeout(() => this.tryStartNewHand(), 1500)
+      }
+    }
   }
 
   private handleSitDown(ws: WebSocket, msg: { userId: string; nickname: string; avatar: string; chips: number; seatIndex?: number }) {
@@ -223,7 +249,21 @@ class TexasRoom {
   }
 
   public tryStartNewHand() {
-    const activePlayers = this.seats.filter(s => s && s.chips > this.bigBlind)
+    clearTimeout(this.turnTimeoutTimer)
+
+    // 自动为筹码不足的玩家充值补给，确保牌局不卡顿
+    for (let i = 0; i < 6; i++) {
+      const p = this.seats[i]
+      if (p && p.chips < this.bigBlind) {
+        const reload = this.bigBlind * 25
+        p.chips = reload
+        p.isFolded = false
+        p.isAllIn = false
+        this.addLog(`🎁 [${p.nickname}] 筹码已补充至 🪙${reload}，重返牌局！`)
+      }
+    }
+
+    const activePlayers = this.seats.filter(s => s && s.chips >= this.bigBlind)
     if (activePlayers.length < 2) {
       this.stage = 'idle'
       this.addLog('⏳ 牌桌等待更多真实牌手入座 (满2人自动发牌)...')
@@ -231,7 +271,6 @@ class TexasRoom {
       return
     }
 
-    clearTimeout(this.turnTimeoutTimer)
     this.stage = 'preflop'
     this.deck = shuffleDeck(createDeck(this.isShortDeck))
     this.communityCards = []
@@ -245,7 +284,7 @@ class TexasRoom {
         p.cards = [this.deck.pop()!, this.deck.pop()!]
         p.currentRoundBet = 0
         p.totalHandBet = 0
-        p.isFolded = p.chips <= 0
+        p.isFolded = false
         p.isAllIn = false
         p.hasActedThisRound = false
         delete p.evaluatedHand
@@ -255,16 +294,27 @@ class TexasRoom {
     // 移动庄家位
     this.dealerSeatIndex = this.findNextActiveSeat(this.dealerSeatIndex)
 
-    // 盲注位置
-    const sbSeat = this.findNextActiveSeat(this.dealerSeatIndex)
-    const bbSeat = this.findNextActiveSeat(sbSeat)
+    let sbSeat: number
+    let bbSeat: number
+
+    if (activePlayers.length === 2) {
+      // 单挑模式 (Heads-Up):
+      // 庄家位 (Button) 是小盲注，翻牌前首先表态！
+      // 另一个玩家是大盲注！
+      sbSeat = this.dealerSeatIndex
+      bbSeat = this.findNextActiveSeat(this.dealerSeatIndex)
+      this.activeSeatIndex = sbSeat
+    } else {
+      // 多人模式 (3人及以上):
+      // 庄家左手位是小盲注，第二位是大盲注
+      sbSeat = this.findNextActiveSeat(this.dealerSeatIndex)
+      bbSeat = this.findNextActiveSeat(sbSeat)
+      this.activeSeatIndex = this.findNextActiveSeat(bbSeat)
+    }
 
     this.postBet(this.seats[sbSeat]!, this.smallBlind, '小盲注')
     this.postBet(this.seats[bbSeat]!, this.bigBlind, '大盲注')
     this.currentHighestBet = this.bigBlind
-
-    // 翻牌前首先表态：大盲注左手位 (UTG 枪口位)
-    this.activeSeatIndex = this.findNextActiveSeat(bbSeat)
 
     this.addLog(`✨ --- 第 ${Date.now().toString().slice(-4)} 手德州扑克开始 ---`)
     this.broadcastSnapshot()
@@ -284,9 +334,16 @@ class TexasRoom {
   private handlePlayerAction(ws: WebSocket, msg: { action: 'fold' | 'check' | 'call' | 'raise' | 'allin'; amount?: number }) {
     if (this.stage === 'idle' || this.stage === 'ended' || this.stage === 'showdown') return
     const p = this.seats[this.activeSeatIndex]
-    if (!p || p.ws !== ws) {
-      ws.send(JSON.stringify({ type: 'error', message: '还未轮到您操作' }))
-      return
+    if (!p) return
+
+    // 如果 ws 发生了重连，及时更新连接
+    if (p.ws !== ws) {
+      const matchWsPlayer = this.seats.find(s => s && s.ws === ws)
+      if (matchWsPlayer && matchWsPlayer !== p) {
+        ws.send(JSON.stringify({ type: 'error', message: '还未轮到您操作' }))
+        return
+      }
+      p.ws = ws
     }
 
     this.executePlayerAction(p, msg.action, msg.amount)
@@ -324,14 +381,17 @@ class TexasRoom {
       }
 
       case 'raise': {
-        const targetBet = Math.max(this.currentHighestBet + this.bigBlind, amount || (this.currentHighestBet * 2))
+        const minTarget = this.currentHighestBet + this.bigBlind
+        const targetBet = Math.max(minTarget, amount || (this.currentHighestBet * 2))
         const need = targetBet - p.currentRoundBet
         const actual = Math.min(p.chips, need)
         p.chips -= actual
         p.currentRoundBet += actual
         p.totalHandBet += actual
         this.pot += actual
-        this.currentHighestBet = p.currentRoundBet
+        if (p.currentRoundBet > this.currentHighestBet) {
+          this.currentHighestBet = p.currentRoundBet
+        }
         if (p.chips === 0) p.isAllIn = true
         this.addLog(`🔥 [${p.nickname}] 加注到: 🪙${p.currentRoundBet}`)
         // 加注后其他未 AllIn 且未 Fold 的玩家需要重新表态
@@ -367,18 +427,31 @@ class TexasRoom {
   }
 
   private checkBettingRoundComplete() {
+    clearTimeout(this.turnTimeoutTimer)
     const alive = this.seats.filter(s => s && !s.isFolded)
     // 如果只剩 1 个人未弃牌，直接获胜
-    if (alive.length === 1) {
-      this.concludeSoloWinner(alive[0]!)
+    if (alive.length <= 1) {
+      if (alive.length === 1) this.concludeSoloWinner(alive[0]!)
       return
     }
 
-    // 检查是否所有活跃玩家都已表态且下注额持平 (或已经 All In)
-    const needAct = alive.filter(s => !s.isAllIn)
-    const allActed = needAct.every(s => s.hasActedThisRound && s.currentRoundBet === this.currentHighestBet)
+    // 检查存活玩家中是否还有未 All-In 且有筹码的玩家
+    const canBetPlayers = alive.filter(s => !s.isAllIn && s.chips > 0)
 
-    if (allActed || needAct.length <= 1 && alive.every(s => s.hasActedThisRound || s.isAllIn)) {
+    // 所有能下注的玩家是否已行动且当前下注额平
+    const allActed = canBetPlayers.every(s => s.hasActedThisRound && s.currentRoundBet === this.currentHighestBet)
+
+    // 如果可行动玩家 <= 1（例如仅剩1人有筹码或全场All-In），只要当前轮下注额已平或者无人能加注，本轮下注结束
+    if (canBetPlayers.length <= 1) {
+      const betsMatched = alive.every(s => s.currentRoundBet === this.currentHighestBet || s.isAllIn)
+      const hasAnyActed = alive.some(s => s.hasActedThisRound)
+      if (betsMatched && (allActed || hasAnyActed || canBetPlayers.length === 0)) {
+        this.advanceToNextStage()
+        return
+      }
+    }
+
+    if (allActed) {
       this.advanceToNextStage()
     } else {
       this.activeSeatIndex = this.findNextActiveSeat(this.activeSeatIndex)
@@ -388,6 +461,8 @@ class TexasRoom {
   }
 
   private advanceToNextStage() {
+    clearTimeout(this.turnTimeoutTimer)
+
     // 重置本轮下注标记
     for (const s of this.seats) {
       if (s) {
@@ -414,6 +489,26 @@ class TexasRoom {
     } else if (this.stage === 'river') {
       this.stage = 'showdown'
       this.handleShowdown()
+      return
+    }
+
+    const alive = this.seats.filter(s => s && !s.isFolded)
+    if (alive.length <= 1) {
+      if (alive.length === 1) this.concludeSoloWinner(alive[0]!)
+      return
+    }
+
+    // 检查是否还能继续下注（未 AllIn 且有筹码的存活玩家数量）
+    const canBetPlayers = alive.filter(s => !s.isAllIn && s.chips > 0)
+
+    if (canBetPlayers.length <= 1) {
+      // 全场已 All-In 或仅剩 1 人有筹码（无法再有加注对决）：
+      // 启动自动发牌秀牌流程 (All-In Runout)，每街等待 1.5 秒动画后自动推进
+      this.activeSeatIndex = -1
+      this.broadcastSnapshot()
+      setTimeout(() => {
+        this.advanceToNextStage()
+      }, 1500)
       return
     }
 
@@ -474,8 +569,9 @@ class TexasRoom {
 
   private startTurnTimer() {
     clearTimeout(this.turnTimeoutTimer)
+    if (this.activeSeatIndex < 0) return
     const cur = this.seats[this.activeSeatIndex]
-    if (!cur) return
+    if (!cur || cur.isFolded || cur.isAllIn) return
 
     // 真人玩家 15 秒倒计时
     this.turnTimeoutTimer = setTimeout(() => {

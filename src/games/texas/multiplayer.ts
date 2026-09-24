@@ -183,6 +183,11 @@ export function useTexasMultiplayer() {
     ws.value.send(JSON.stringify({ type: 'start_hand' }))
   }
 
+  function rebuy(amount?: number) {
+    if (!ws.value) return
+    ws.value.send(JSON.stringify({ type: 'rebuy', amount }))
+  }
+
   function disconnect() {
     if (ws.value) {
       ws.value.close()
@@ -197,6 +202,7 @@ export function useTexasMultiplayer() {
     disconnect,
     sit,
     stand,
+    rebuy,
     action,
     chat,
     startGame,
